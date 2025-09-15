@@ -31,7 +31,7 @@ type Project struct {
 	Cwd string
 	Build_dir_path string
 	Build_file_path string
-	Project_table *lua.LTable
+	Buildr_file_dir_path string
 	Sources []*File
 	Headers []*Directory
 	Libraries []*Package
@@ -41,6 +41,7 @@ type Project struct {
 	ASMFlags []string
 	LinkerFlags []string
 	Assembler string
+	AutoConfigure bool
 }
 
 type Flags struct {
@@ -55,7 +56,7 @@ var GlobalFlags = &Flags{
 
 var Projects []*Project
 var L *lua.LState
-const Version = 1.0
+const Version = 1.1
 
 const  (  
     Red = "\033[31m"

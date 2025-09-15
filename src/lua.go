@@ -17,13 +17,28 @@ func RegisterStructType[T any](L *lua.LState, name string) {
         if val.Kind() == reflect.Ptr {
             val = val.Elem()
         }
+
         key := L.CheckString(2)
         field := val.FieldByName(key)
-        if field.IsValid() {
-            L.Push(lua.LString(fmt.Sprintf("%v", field.Interface())))
+        if !field.IsValid() {
+            L.Push(lua.LNil)
             return 1
         }
-        L.Push(lua.LNil)
+
+        switch field.Kind() {
+        case reflect.Bool:
+            L.Push(lua.LBool(field.Bool()))
+        case reflect.String:
+            L.Push(lua.LString(field.String()))
+        case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+            L.Push(lua.LNumber(field.Int()))
+        case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+            L.Push(lua.LNumber(int64(field.Uint())))
+        case reflect.Float32, reflect.Float64:
+            L.Push(lua.LNumber(field.Float()))
+        default:
+            L.Push(lua.LString(fmt.Sprintf("%v", field.Interface())))
+        }
         return 1
     }))
 
@@ -33,12 +48,35 @@ func RegisterStructType[T any](L *lua.LState, name string) {
         if val.Kind() == reflect.Ptr {
             val = val.Elem()
         }
+
         key := L.CheckString(2)
-        newVal := L.CheckAny(3)
         field := val.FieldByName(key)
-        if field.IsValid() && field.CanSet() {
-            if s, ok := newVal.(lua.LString); ok && field.Kind() == reflect.String {
+        if !field.IsValid() || !field.CanSet() {
+            return 0
+        }
+
+        newVal := L.CheckAny(3)
+
+        switch field.Kind() {
+        case reflect.Bool:
+            if b, ok := newVal.(lua.LBool); ok {
+                field.SetBool(bool(b))
+            }
+        case reflect.String:
+            if s, ok := newVal.(lua.LString); ok {
                 field.SetString(string(s))
+            }
+        case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+            if n, ok := newVal.(lua.LNumber); ok {
+                field.SetInt(int64(n))
+            }
+        case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+            if n, ok := newVal.(lua.LNumber); ok {
+                field.SetUint(uint64(n))
+            }
+        case reflect.Float32, reflect.Float64:
+            if n, ok := newVal.(lua.LNumber); ok {
+                field.SetFloat(float64(n))
             }
         }
         return 0
@@ -74,7 +112,7 @@ func lua_glob_dirs(L *lua.LState) int {
 		ud := L.NewUserData()
 		ud.Value = d
 		L.SetMetatable(ud, L.GetTypeMetatable("Directory"))
-		resultTbl.Append(ud)
+		resultTbl.RawSetString(d.Name, ud)
 	}
 	L.Push(resultTbl)
 
@@ -109,14 +147,19 @@ func lua_glob_files(L *lua.LState) int {
 		ud := L.NewUserData()
 		ud.Value = f
 		L.SetMetatable(ud, L.GetTypeMetatable("File"))
-		resultTbl.Append(ud)
+		resultTbl.RawSetString(f.Name, ud)
 	}
 	L.Push(resultTbl)
 	return 1;
 }
 
 func lua_version(L *lua.LState) int {
-    required := L.CheckNumber(1) 
+    required := float64(L.CheckNumber(1)) 
+
+    if required*10 != float64(int(required*10)) {
+        msg("ERROR", fmt.Sprintf("Invalid version number %.6g (only one decimal place allowed)", required))
+        return 0
+    }
 
     if float64(required) > Version {
         msg("ERROR",fmt.Sprintf("Error build.lua requires MBS version %.1f or newer, but you are using %.1f",required,Version))
@@ -150,15 +193,24 @@ func lua_project(L *lua.LState) int {
     if L.GetTop() >= 2 {
         dirArg := L.Get(2)
         if dirStr, ok := dirArg.(lua.LString); ok {
-            buildDir = string(dirStr)
+            if filepath.IsAbs(string(dirStr)) {
+                buildDir = string(dirStr)
+            } else {
+                buildDir = filepath.Join(baseDir, string(dirStr))
+            }
         } else {
             L.RaiseError("project(name[, build_dir]) second argument must be a string, got %s", dirArg.Type().String())
         }
     }
 
+
     //Overwrite if we have flags
     if GlobalFlags.builddir != "" {
-        buildDir=GlobalFlags.builddir
+        if filepath.IsAbs(GlobalFlags.builddir) {
+            buildDir = GlobalFlags.builddir
+        } else {
+            buildDir = filepath.Join(baseDir, GlobalFlags.builddir)
+        }
     }
 
 
@@ -191,8 +243,9 @@ func lua_project(L *lua.LState) int {
         Name:          string(name),
         Build_dir_path: abs,
 		Build_file_path: absfile,
+        Buildr_file_dir_path: baseDir,
 		Cwd:            cwd,
-		Project_table: L.NewTable(),
+        AutoConfigure: true,
     }
 
     Projects = append(Projects, project)
@@ -461,7 +514,7 @@ func lua_glob_packages(L *lua.LState) int {
 		ud := L.NewUserData()
 		ud.Value = p
 		L.SetMetatable(ud, L.GetTypeMetatable("Package"))
-		resultTbl.Append(ud)
+		resultTbl.RawSetString(p.Name, ud)
 	}
 	L.Push(resultTbl)
 
@@ -486,18 +539,9 @@ func lua_build(L *lua.LState)int{
         return 0
     }
 
-    //REMOVE THIS
-    if project.Compiler == "" {
-        project.Compiler = "gcc"
+    if project.AutoConfigure {
+        auto_configure_project(project)
     }
-    if project.Assembler == ""{
-        project.Assembler = "nasm"
-    }
-    if len(project.ASMFlags) == 0 {
-        project.ASMFlags = []string{"-f", "elf64"} 
-    }
-
-
     Generate_ninja(project)
 	fmt.Println("Building finished!");
     return 1
@@ -553,6 +597,18 @@ func lua_copy(L *lua.LState) int {
     return 0
 }
 
+func lua_set_autoconfigure(L *lua.LState)int {
+    ud := L.CheckUserData(1)
+    project, ok := ud.Value.(*Project)
+    if !ok {
+        L.ArgError(1, "expected Project userdata")
+        return 0
+    }
+
+    autoConfigure := L.CheckBool(2)
+    project.AutoConfigure = autoConfigure;
+    return 0;
+}
 
 func mbs_loader(L *lua.LState)int{
     mod := L.SetFuncs(L.NewTable(),map[string]lua.LGFunction {
@@ -573,6 +629,7 @@ func mbs_loader(L *lua.LState)int{
         "linkerflags":lua_set_linkerflags,
 		"copy":lua_copy,
 		"version": lua_version,
+        "autoconfigure":lua_set_autoconfigure,
     })
     L.Push(mod);
     return 1;

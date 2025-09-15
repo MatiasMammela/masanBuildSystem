@@ -15,6 +15,8 @@ func (p *Project) Debug() {
     fmt.Println("Name:", p.Name)
     fmt.Println("Build Directory Path:", p.Build_dir_path)
 	fmt.Println("Build file Path:", p.Build_file_path)
+	fmt.Println("Build file dir Path:",p.Buildr_file_dir_path)
+	fmt.Println("CWD:",p.Cwd)
 	fmt.Println("Compiler:", p.Compiler)
 	fmt.Println("Assembler:", p.Assembler);
     fmt.Println("Headers:")
@@ -33,6 +35,11 @@ func (p *Project) Debug() {
     }
     fmt.Println("LFlags:")
     for _, f := range p.LFlags {
+        fmt.Println("  -", f)
+    }
+
+	fmt.Println("LinkerFlags:")
+    for _, f := range p.LinkerFlags {
         fmt.Println("  -", f)
     }
 
@@ -218,6 +225,66 @@ func find_files(patterns []string) []*File {
 	return result
 }
 
+var (
+	package_managers_candidates=[]string{"apt","pacman"}
+)
+
+func detect_package_manager()string{
+	for _, pkgmngr := range package_managers_candidates {
+		if _, err := exec.LookPath(pkgmngr); err == nil {
+			return pkgmngr
+		}
+	}
+	return "" 
+}
+func check_package_available(pm, name string) bool {
+	var cmd *exec.Cmd
+	switch pm {
+	case "apt":
+		cmd = exec.Command("apt", "show", name)
+	case "pacman":
+		cmd = exec.Command("pacman", "-Ss", "^"+name+"$")
+	default:
+		return false
+	}
+	return cmd.Run() == nil
+}
+
+func download_packages(name string) error {
+	pm := detect_package_manager()
+	if pm == "" {
+		return fmt.Errorf("no supported package manager found")
+	}
+	if !check_package_available(pm, name) {
+		return fmt.Errorf("package not found in %s repositories", pm)
+	}
+	fmt.Printf("Package '%s' is missing. Do you want to install it using %s? [Y/n]: ", name, pm)
+	var response string
+	fmt.Scanln(&response)
+	response = strings.TrimSpace(strings.ToLower(response))
+
+	if response != "" && response != "y" && response != "yes" {
+		fmt.Println("Skipping installation.")
+		return fmt.Errorf("user declined to install package '%s'", name)
+	}
+
+
+
+	var cmd *exec.Cmd
+	switch pm {
+	case "apt":
+		cmd = exec.Command("sudo", "apt", "install", "-y", name)
+	case "pacman":
+		cmd = exec.Command("sudo", "pacman", "-S", "--noconfirm", name)
+	default:
+		return fmt.Errorf("unsupported package manager: %s", pm)
+	}
+
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
 func find_packages(names []string) []*Package {
 	var result []*Package
 	for _, name := range names {
@@ -226,9 +293,18 @@ func find_packages(names []string) []*Package {
 		// Check if package exists
 		check := exec.Command("pkg-config", "--exists", name)
 		if err := check.Run(); err != nil {
-			msg("WARNING","Package "+name+" not found!")
-			result = append(result, pkg)
-			continue
+			msg("WARNING", "Package "+name+" not found!")
+			if err := download_packages(name); err != nil {
+				msg("ERROR", "Failed to install package "+name+": "+err.Error())
+				result = append(result, pkg)
+				continue
+			}
+			// Retry pkg-config after install
+			if err := exec.Command("pkg-config", "--exists", name).Run(); err != nil {
+				msg("ERROR", "Package "+name+" still not found after installation")
+				result = append(result, pkg)
+				continue
+			}
 		}
 
 		// If found, fetch cflags and libs

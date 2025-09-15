@@ -59,18 +59,30 @@ func build(args []string) error {
 
 
 	buildFilePath := args[0]
-    if info.IsDir() {
-       	buildFilePath = filepath.Join(argumentDir, "build.lua")
-        if _, err := os.Stat(buildFilePath); os.IsNotExist(err) {
-            return fmt.Errorf("no build.lua found in directory: %s", argumentDir)
-        }
-    }
+	if info.IsDir() {
+		buildFilePath = filepath.Join(argumentDir, "build.lua")
+		if _, err := os.Stat(buildFilePath); os.IsNotExist(err) {
+			return fmt.Errorf("no build.lua found in directory: %s", argumentDir)
+		}
+	}
+
+	buildFilePath, err = filepath.Abs(buildFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path: %v", err)
+	}	
 
 	L = lua.NewState()
     defer L.Close()
 	luaFileDir := filepath.Dir(buildFilePath)
+	
 	L.SetGlobal("__lua_file_dir", lua.LString(luaFileDir))
-	L.SetGlobal("__lua_file_path", lua.LString(luaFileDir)+"/build.lua")
+	L.SetGlobal("__lua_file_path", lua.LString(buildFilePath))
+
+	if err := os.Chdir(luaFileDir); err != nil {
+    	return fmt.Errorf("failed to chdir: %v", err)
+	}
+
+
 	L.PreloadModule("mbs", mbs_loader)
   	
 	

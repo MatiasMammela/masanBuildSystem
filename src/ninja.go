@@ -79,11 +79,6 @@ func Generate_link(proj *Project, ninja *Ninja) {
 
 func Generate_ninja(Project *Project){
 	ninjaPath := Project.Build_dir_path+"/build.ninja"
-	// fmt.Println(Project.Compiler)
-	// fmt.Println(Project.Assembler)
-	// fmt.Println(Project.ASMFlags)
-	// fmt.Println(Project.CFlags)
-	// fmt.Println(Project.LFlags)
 	file , err := os.Create(ninjaPath)
 	if err != nil {
 		fmt.Println("Failed to create build.ninja:",err)
