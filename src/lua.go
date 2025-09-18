@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 
 	lua "github.com/yuin/gopher-lua"
 )
@@ -237,8 +238,10 @@ func lua_project(L *lua.LState) int {
         L.ArgError(2, "could not resolve absolute build directory path")
         return 0
     }
-	
-
+    OS := runtime.GOOS;
+    if OS == ""{
+        return 0
+    }
 	project := &Project{
         Name:          string(name),
         Build_dir_path: abs,
@@ -246,6 +249,7 @@ func lua_project(L *lua.LState) int {
         Buildr_file_dir_path: baseDir,
 		Cwd:            cwd,
         AutoConfigure: true,
+        OS: OS,
     }
 
     Projects = append(Projects, project)

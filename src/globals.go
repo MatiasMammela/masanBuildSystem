@@ -42,6 +42,7 @@ type Project struct {
 	LinkerFlags []string
 	Assembler string
 	AutoConfigure bool
+	OS string
 }
 
 type Flags struct {
@@ -56,7 +57,7 @@ var GlobalFlags = &Flags{
 
 var Projects []*Project
 var L *lua.LState
-const Version = 1.1
+const Version = 1.2
 
 const  (  
     Red = "\033[31m"

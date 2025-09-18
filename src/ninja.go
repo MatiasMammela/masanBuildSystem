@@ -19,6 +19,15 @@ type Ninja struct {
 
 }
 
+
+func ninja_pathcompat(path string) string {
+    p := strings.ReplaceAll(path, "\\", "/")
+    if len(p) >= 3 && ((p[0] >= 'A' && p[0] <= 'Z') || (p[0] >= 'a' && p[0] <= 'z')) && p[1] == ':' && p[2] == '/' {
+        p = string(p[0]) + "$" + p[2:]
+    }
+    return p
+}
+
 func Generate_packages(proj *Project, ninja *Ninja) {
 	for _, pkg := range proj.Libraries {
 		if pkg.Found {
@@ -76,6 +85,29 @@ func Generate_link(proj *Project, ninja *Ninja) {
     strings.Join(ninja.LinkerFlags, " "))
 }
 
+func windows_compatibility(project *Project) {
+
+	project.Build_dir_path = ninja_pathcompat(project.Build_dir_path)
+	project.Build_file_path = ninja_pathcompat(project.Build_file_path)
+	project.Buildr_file_dir_path = ninja_pathcompat(project.Buildr_file_dir_path)
+
+	for _, src := range project.Sources {
+		src.Cwd = ninja_pathcompat(src.Cwd)
+	}
+
+	for _, hdr := range project.Headers {
+		hdr.Path = ninja_pathcompat(hdr.Path)
+	}
+
+	for _, pkg := range project.Libraries {
+		if pkg.Headers != "" {
+			pkg.Headers = ninja_pathcompat(pkg.Headers)
+		}
+		if pkg.Libraries != "" {
+			pkg.Libraries = ninja_pathcompat(pkg.Libraries)
+		}
+	}
+}
 
 func Generate_ninja(Project *Project){
 	ninjaPath := Project.Build_dir_path+"/build.ninja"
@@ -84,8 +116,10 @@ func Generate_ninja(Project *Project){
 		fmt.Println("Failed to create build.ninja:",err)
 	}
 	defer file.Close()
-	
-
+          
+	if Project.OS == "windows" {
+		windows_compatibility(Project)
+	}
 
 	fmt.Fprintln(file, "# This is an auto-generated build.ninja file")
 	fmt.Fprintln(file)
@@ -103,5 +137,4 @@ func Generate_ninja(Project *Project){
 	Generate_packages(Project, Ninja)
 	Generate_sources(Project, Ninja)
 	Generate_link(Project, Ninja)
-
 }

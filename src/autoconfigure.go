@@ -63,9 +63,7 @@ func auto_configure_project(proj *Project) {
 		return
 	}
 
-	// Set compiler
 	proj.Compiler = detect_compiler(lang)
-
 	proj.CFlags = append(proj.CFlags,default_flags(lang)...); 
 	
 

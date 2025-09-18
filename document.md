@@ -389,6 +389,7 @@ type Project struct {
 	LinkerFlags []string
 	Assembler string
 	AutoConfigure bool
+	OS string
 }
 ```
 

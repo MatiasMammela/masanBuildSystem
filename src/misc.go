@@ -13,6 +13,7 @@ import (
 func (p *Project) Debug() {
     fmt.Println("=== Project Debug ===")
     fmt.Println("Name:", p.Name)
+	fmt.Println("OS:", p.OS)
     fmt.Println("Build Directory Path:", p.Build_dir_path)
 	fmt.Println("Build file Path:", p.Build_file_path)
 	fmt.Println("Build file dir Path:",p.Buildr_file_dir_path)
