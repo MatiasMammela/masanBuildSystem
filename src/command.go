@@ -130,6 +130,6 @@ func Init_command(args []string) error{
 	case "version":
 		return fmt.Errorf("%.1f" ,Version)
 	default:
-		return fmt.Errorf("unkown command: %s", command)
+		return fmt.Errorf("unknown command: %s", command)
 	}
 }

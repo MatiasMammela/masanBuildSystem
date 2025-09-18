@@ -14,4 +14,4 @@ SHA256: `ad306248ccdd0257ed3e83443009b3759d8a3648b02331ec3d47ce0567fa8290`
 <img src="https://cdn-icons-png.flaticon.com/512/906/906308.png" alt="drawing" width="100"/><br>
 [PE x86_64 
 Static](bin/mbs.exe) 
-SHA256: `0c4685efcbe53fd4cfd6077955107ea84373d126323df8b599e604437f206bfc`
+SHA256: `774c99fa8b8dadd1acafa532a9120a2ed5ac0f188b27b2f4a73233d5fe757d49`

@@ -1,9 +1,7 @@
 
-# 1.1
+# 1.2
 
-*  New function <i>autoconfigure</i>
-*  <i>glob_packages</i> updated
-*  Multitude of bug fixes
+*  Windows support
 
 See the [full documentation](document.md) for more information
 

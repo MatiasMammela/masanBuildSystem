@@ -305,6 +305,7 @@ mbs.autoconfigure(project,false)
 ## </> Command-line interface
 <details>
 <summary></summary>
+
 ## build (CLI)
 
 build <build_file_path>
@@ -345,6 +346,7 @@ mbs configure
 ## ⚑  Command-line flags
 <details>
 <summary></summary>
+
 ## --builddir
 
 Lets you bypass the build directory path set in the build.lua file

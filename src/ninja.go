@@ -21,11 +21,10 @@ type Ninja struct {
 
 
 func ninja_pathcompat(path string) string {
-    p := strings.ReplaceAll(path, "\\", "/")
-    if len(p) >= 3 && ((p[0] >= 'A' && p[0] <= 'Z') || (p[0] >= 'a' && p[0] <= 'z')) && p[1] == ':' && p[2] == '/' {
-        p = string(p[0]) + "$" + p[2:]
+    if len(path) >= 3 && ((path[0] >= 'A' && path[0] <= 'Z') || (path[0] >= 'a' && path[0] <= 'z')) && path[1] == ':' && path[2] == '\\' {
+        path = string(path[0]) + "$:" + path[2:]
     }
-    return p
+    return path
 }
 
 func Generate_packages(proj *Project, ninja *Ninja) {
