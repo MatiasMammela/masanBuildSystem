@@ -567,19 +567,54 @@ func lua_copy(L *lua.LState) int {
     }
 
 	var sources[]string;
-  	for i := 1; i < L.GetTop(); i++ {
-        val := L.Get(i)
-        switch val.Type() {
-        case lua.LTString:
+	for i := 1; i < L.GetTop(); i++ {
+		val := L.Get(i)
+		switch val.Type() {
+		case lua.LTString:
 			src := val.String()
-            if !filepath.IsAbs(src) {
-                src = filepath.Join(baseDir, src)
-            }
-            sources = append(sources, src)
-        default:
-            L.ArgError(i, "expected string or table")
-        }
-    }
+			if !filepath.IsAbs(src) {
+				src = filepath.Join(baseDir, src)
+			}
+			sources = append(sources, src)
+		case lua.LTTable:
+			val.(*lua.LTable).ForEach(func(k lua.LValue, v lua.LValue) {
+				if ud, ok := v.(*lua.LUserData); ok {
+					switch item := ud.Value.(type) {
+					case *File:
+						src := item.Cwd
+						if !filepath.IsAbs(src) {
+							src = filepath.Join(baseDir, src)
+						}
+						sources = append(sources, src)
+					case *Directory:
+						src := item.Path
+						if !filepath.IsAbs(src) {
+							src = filepath.Join(baseDir, src)
+						}
+						sources = append(sources, src)
+					}
+				}
+			})
+		case lua.LTUserData:
+			ud := val.(*lua.LUserData)
+			switch item := ud.Value.(type) {
+			case *File:
+				src := item.Cwd
+				if !filepath.IsAbs(src) {
+					src = filepath.Join(baseDir, src)
+				}
+				sources = append(sources, src)
+			case *Directory:
+				src := item.Path
+				if !filepath.IsAbs(src) {
+					src = filepath.Join(baseDir, src)
+				}
+				sources = append(sources, src)
+			}
+		default:
+			L.ArgError(i, "expected string, table, File or Directory")
+		}
+	}
 
 	for _, src := range sources {
 		info, err := os.Stat(src)
@@ -614,6 +649,19 @@ func lua_set_autoconfigure(L *lua.LState)int {
     return 0;
 }
 
+func lua_set_mode(L *lua.LState)int {
+    ud := L.CheckUserData(1)
+    project, ok := ud.Value.(*Project)
+    if !ok {
+        L.ArgError(1, "expected Project userdata")
+        return 0
+    }
+
+    mode := L.CheckString(2);
+    project.Mode = mode;
+    return 0;
+}
+
 func mbs_loader(L *lua.LState)int{
     mod := L.SetFuncs(L.NewTable(),map[string]lua.LGFunction {
         "project":lua_project,
@@ -634,6 +682,7 @@ func mbs_loader(L *lua.LState)int{
 		"copy":lua_copy,
 		"version": lua_version,
         "autoconfigure":lua_set_autoconfigure,
+        "mode":lua_set_mode,
     })
     L.Push(mod);
     return 1;

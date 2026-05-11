@@ -43,6 +43,7 @@ type Project struct {
 	Assembler string
 	AutoConfigure bool
 	OS string
+	Mode string
 }
 
 type Flags struct {

@@ -122,9 +122,6 @@ func Generate_ninja(Project *Project){
 
 	fmt.Fprintln(file, "# This is an auto-generated build.ninja file")
 	fmt.Fprintln(file)
-	fmt.Fprintf(file, "rule cc\n  command = %s $CFLAGS -c $in -o $out\n  description = CC $in\n\n", Project.Compiler)
-	fmt.Fprintf(file, "rule asm\n  command = %s $ASMFLAGS $in -o $out\n  description = ASM $in\n\n", Project.Assembler)
-	fmt.Fprintf(file, "rule link\n  command = %s $LINKFLAGS $in $LFLAGS -o $out\n  description = LINK $out\n\n", Project.Compiler)
 
 	Ninja  := &Ninja{file:file,
 		CFlags: Project.CFlags,
@@ -132,6 +129,12 @@ func Generate_ninja(Project *Project){
 		ASMFlags: Project.ASMFlags,
 		LinkerFlags: Project.LinkerFlags,
 	}
+
+
+	fmt.Fprintf(file, "rule cc\n  command = %s $CFLAGS -c $in -o $out\n  description = CC $in\n\n", Project.Compiler)
+	fmt.Fprintf(file, "rule asm\n  command = %s $ASMFLAGS $in -o $out\n  description = ASM $in\n\n", Project.Assembler)
+	fmt.Fprintf(file, "rule link\n  command = %s $LINKFLAGS $in $LFLAGS -o $out\n  description = LINK $out\n\n", Project.Compiler)
+	
 	Generate_headers(Project, Ninja)
 	Generate_packages(Project, Ninja)
 	Generate_sources(Project, Ninja)
