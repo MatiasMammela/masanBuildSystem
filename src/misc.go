@@ -20,6 +20,7 @@ func (p *Project) Debug() {
 	fmt.Println("CWD:",p.Cwd)
 	fmt.Println("Compiler:", p.Compiler)
 	fmt.Println("Assembler:", p.Assembler);
+	fmt.Println("Linker:", p.Linker);
     fmt.Println("Headers:")
     for _, h := range p.Headers {
         fmt.Println("  -", h.Path)
@@ -226,6 +227,91 @@ func find_files(patterns []string) []*File {
 	return result
 }
 
+
+
+
+
+
+
+
+
+
+
+
+func get_pacman_package_options(name string) []string {
+    cmd := exec.Command("pacman", "-Ss", name)
+    out, err := cmd.Output()
+    if err != nil || len(out) == 0 {
+        return nil
+    }
+    var options []string
+    lines := strings.Split(string(out), "\n")
+    for _, line := range lines {
+        // Package lines start with "repo/name version"
+        if len(line) > 0 && !strings.HasPrefix(line, " ") {
+            parts := strings.Fields(line)
+            if len(parts) > 0 {
+                full := parts[0]
+                if idx := strings.Index(full, "/"); idx >= 0 {
+                    options = append(options, full[idx+1:])
+                }
+            }
+        }
+    }
+    return options
+}
+
+func get_apt_package_options(name string) []string {
+    cmd := exec.Command("apt-cache", "search","--names-only", name)
+    out, err := cmd.Output()
+    if err != nil || len(out) == 0 {
+        return nil
+    }
+    var options []string
+    lines := strings.Split(string(out), "\n")
+    for _, line := range lines {
+        if len(line) > 0 {
+            parts := strings.Fields(line)
+            if len(parts) > 0 {
+                options = append(options, parts[0])
+            }
+        }
+    }
+    return options
+}
+
+func get_package_options(pm, name string) []string {
+    switch pm {
+    case "apt":
+        return get_apt_package_options(name)
+    case "pacman":
+        return get_pacman_package_options(name)
+    default:
+        return nil
+    }
+}
+
+
+func prompt_package_selection(name string, options []string) string {
+    if len(options) == 0 {
+        return ""
+    }
+    if len(options) == 1 {
+        return options[0]
+    }
+    fmt.Printf("Multiple packages found for '%s':\n", name)
+    for i, opt := range options {
+        fmt.Printf("  [%d] %s\n", i+1, opt)
+    }
+    fmt.Printf("Select package [1-%d] or 0 to skip: ", len(options))
+    var choice int
+    fmt.Scanln(&choice)
+    if choice < 1 || choice > len(options) {
+        return ""
+    }
+    return options[choice-1]
+}
+
 var (
 	package_managers_candidates=[]string{"apt","pacman"}
 )
@@ -238,52 +324,43 @@ func detect_package_manager()string{
 	}
 	return "" 
 }
-func check_package_available(pm, name string) bool {
-	var cmd *exec.Cmd
-	switch pm {
-	case "apt":
-		cmd = exec.Command("apt", "show", name)
-	case "pacman":
-		cmd = exec.Command("pacman", "-Ss", "^"+name+"$")
-	default:
-		return false
-	}
-	return cmd.Run() == nil
-}
 
 func download_packages(name string) error {
-	pm := detect_package_manager()
-	if pm == "" {
-		return fmt.Errorf("no supported package manager found")
-	}
-	if !check_package_available(pm, name) {
-		return fmt.Errorf("package not found in %s repositories", pm)
-	}
-	fmt.Printf("Package '%s' is missing. Do you want to install it using %s? [Y/n]: ", name, pm)
-	var response string
-	fmt.Scanln(&response)
-	response = strings.TrimSpace(strings.ToLower(response))
+    pm := detect_package_manager()
+    if pm == "" {
+        return fmt.Errorf("no supported package manager found")
+    }
 
-	if response != "" && response != "y" && response != "yes" {
-		fmt.Println("Skipping installation.")
-		return fmt.Errorf("user declined to install package '%s'", name)
-	}
+    options := get_package_options(pm, name)
+    if len(options) == 0 {
+        return fmt.Errorf("package '%s' not found in %s repositories", name, pm)
+    }
 
+    pkgname := prompt_package_selection(name, options)
+    if pkgname == "" {
+        return fmt.Errorf("no package selected for '%s'", name)
+    }
 
+    fmt.Printf("Install '%s' using %s? [Y/n]: ", pkgname, pm)
+    var response string
+    fmt.Scanln(&response)
+    response = strings.TrimSpace(strings.ToLower(response))
+    if response != "" && response != "y" && response != "yes" {
+        return fmt.Errorf("user declined to install package '%s'", name)
+    }
 
-	var cmd *exec.Cmd
-	switch pm {
-	case "apt":
-		cmd = exec.Command("sudo", "apt", "install", "-y", name)
-	case "pacman":
-		cmd = exec.Command("sudo", "pacman", "-S", "--noconfirm", name)
-	default:
-		return fmt.Errorf("unsupported package manager: %s", pm)
-	}
-
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+    var cmd *exec.Cmd
+    switch pm {
+    case "apt":
+        cmd = exec.Command("sudo", "apt", "install", "-y", pkgname)
+    case "pacman":
+        cmd = exec.Command("sudo", "pacman", "-S", "--noconfirm", pkgname)
+    default:
+        return fmt.Errorf("unsupported package manager: %s", pm)
+    }
+    cmd.Stdout = os.Stdout
+    cmd.Stderr = os.Stderr
+    return cmd.Run()
 }
 
 func find_packages(names []string) []*Package {

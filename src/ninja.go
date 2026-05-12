@@ -16,7 +16,6 @@ type Ninja struct {
 	ASMFlags []string
 	LinkerFlags []string
 	ObjFiles []string
-
 }
 
 
@@ -32,9 +31,11 @@ func Generate_packages(proj *Project, ninja *Ninja) {
 		if pkg.Found {
 			if pkg.Headers != "" {
 				ninja.CFlags = append(ninja.CFlags, pkg.Headers)
+				proj.CFlags = append(proj.CFlags, pkg.Headers)
 			}
 			if pkg.Libraries != "" {
 				ninja.LFlags = append(ninja.LFlags, pkg.Libraries)
+				proj.LFlags = append(proj.LFlags, pkg.Libraries)
 			}
 		}
 	}
@@ -47,17 +48,20 @@ func Generate_headers(Project *Project ,Ninja *Ninja){
 }
 
 func Generate_sources(proj *Project, ninja *Ninja) {
-	for _, src := range proj.Sources {
-		if !src.Found {
-			continue
-		}
+    objDir := filepath.Join(proj.Build_dir_path, "obj")
+    
+    // Create dirs
+    os.MkdirAll(objDir, 0755)
 
-		baseName := filepath.Base(src.Cwd)
-		objName := strings.TrimSuffix(baseName, filepath.Ext(baseName)) + "_" + strings.TrimPrefix(src.Type, ".") + ".o"
-		objPath := filepath.Join(proj.Build_dir_path, objName)
-		ninja.ObjFiles = append(ninja.ObjFiles, objPath)
-
-		depFile := objPath + ".d" 
+    for _, src := range proj.Sources {
+        if !src.Found {
+            continue
+        }
+        baseName := filepath.Base(src.Cwd)
+        objName := strings.TrimSuffix(baseName, filepath.Ext(baseName)) + "_" + strings.TrimPrefix(src.Type, ".") + ".o"
+        objPath := filepath.Join(objDir, objName)
+        ninja.ObjFiles = append(ninja.ObjFiles, objPath)
+        depFile := objPath + ".d"
 
 		switch src.Type {
 		case ".c", ".cpp":
@@ -65,23 +69,25 @@ func Generate_sources(proj *Project, ninja *Ninja) {
 				"build %s: cc %s\n  CFLAGS = %s -MMD -MF %s\n",
 				objPath, src.Cwd, strings.Join(ninja.CFlags, " "), depFile)
 			fmt.Fprintf(ninja.file, "  depfile = %s\n  deps = gcc\n", depFile)
-		case ".asm":
-			fmt.Fprintf(ninja.file,
-				"build %s: asm %s\n  ASMFLAGS = %s\n",
-				objPath, src.Cwd, strings.Join(ninja.ASMFlags, " "))
-		}
-	}
+        case ".asm":
+            fmt.Fprintf(ninja.file,
+                "build %s: asm %s\n  ASMFLAGS = %s\n",
+                objPath, src.Cwd, strings.Join(ninja.ASMFlags, " "))
+        }
+    }
 }
 
 
 func Generate_link(proj *Project, ninja *Ninja) {
-	output := filepath.Join(proj.Build_dir_path, proj.Name)
-	fmt.Fprintf(ninja.file,
-    "build %s: link %s\n  LFLAGS = %s\n  LINKFLAGS = %s\n",
-    output,
-    strings.Join(ninja.ObjFiles, " "),
-    strings.Join(ninja.LFlags, " "),
-    strings.Join(ninja.LinkerFlags, " "))
+    binDir := filepath.Join(proj.Build_dir_path, "bin")
+    os.MkdirAll(binDir, 0755)
+    output := filepath.Join(binDir, proj.Name)
+    fmt.Fprintf(ninja.file,
+        "build %s: link %s\n  LFLAGS = %s\n  LINKFLAGS = %s\n",
+        output,
+        strings.Join(ninja.ObjFiles, " "),
+        strings.Join(ninja.LFlags, " "),
+        strings.Join(ninja.LinkerFlags, " "))
 }
 
 func windows_compatibility(project *Project) {
@@ -133,7 +139,7 @@ func Generate_ninja(Project *Project){
 
 	fmt.Fprintf(file, "rule cc\n  command = %s $CFLAGS -c $in -o $out\n  description = CC $in\n\n", Project.Compiler)
 	fmt.Fprintf(file, "rule asm\n  command = %s $ASMFLAGS $in -o $out\n  description = ASM $in\n\n", Project.Assembler)
-	fmt.Fprintf(file, "rule link\n  command = %s $LINKFLAGS $in $LFLAGS -o $out\n  description = LINK $out\n\n", Project.Compiler)
+	fmt.Fprintf(file, "rule link\n  command = %s $LINKFLAGS $in $LFLAGS -o $out\n  description = LINK $out\n\n", Project.Linker)
 	
 	Generate_headers(Project, Ninja)
 	Generate_packages(Project, Ninja)

@@ -304,7 +304,7 @@ func lua_debug(L *lua.LState) int {
 
 func lua_compiler(L *lua.LState)int {
 	if L.GetTop() < 2 {
-        L.ArgError(1, "expected atleast 2 arguments: headers and project")
+        L.ArgError(1, "expected atleast 2 arguments: compiler and project")
         return 0
     }
 	ud := L.CheckUserData(1)
@@ -322,6 +322,29 @@ func lua_compiler(L *lua.LState)int {
 	project.Compiler = compiler;
 	return 0;
 }
+
+
+func lua_linker(L *lua.LState)int {
+	if L.GetTop() < 2 {
+        L.ArgError(1, "expected atleast 2 arguments: linker and project")
+        return 0
+    }
+	ud := L.CheckUserData(1)
+    project, ok := ud.Value.(*Project)
+    if !ok {
+        L.ArgError(2, "expected Project userdata")
+        return 0
+    }
+
+	linker := L.CheckString(2);
+	if linker == "" {
+  		L.ArgError(3, "expected linker")
+	}
+
+	project.Linker = linker;
+	return 0;
+}
+
 
 func lua_set_cflags(L *lua.LState) int {
     if L.GetTop() < 2 {
@@ -674,6 +697,7 @@ func mbs_loader(L *lua.LState)int{
 		"packages":lua_packages,
 		"build":lua_build,
 		"compiler":lua_compiler,
+        "linker":lua_linker,
 		"assembler":lua_assembler,
 		"cflags":lua_set_cflags,
 		"lflags":lua_set_lflags,

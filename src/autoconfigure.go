@@ -63,7 +63,10 @@ func auto_configure_project(proj *Project) {
 		return
 	}
 
-	proj.Compiler = detect_compiler(lang)
+	if proj.Compiler == "" {
+        proj.Compiler = detect_compiler(lang)
+    }
+
 	proj.CFlags = append(proj.CFlags,default_flags(lang)...); 
 	
 
@@ -72,6 +75,13 @@ func auto_configure_project(proj *Project) {
 		proj.ASMFlags = append(proj.ASMFlags,default_flags("asm")...);
 		proj.LFlags = append(proj.LFlags, "-no-pie")
 	}
+    
+    if proj.Linker != "" && proj.Linker != proj.Compiler {
+        proj.LinkerFlags = append([]string{"-fuse-ld=" + proj.Linker}, proj.LinkerFlags...)
+        proj.Linker = proj.Compiler  // compiler is the driver, fuse-ld picks the backend
+    } else {
+        proj.Linker = proj.Compiler
+    }
 }
 
 func detect_compiler(lang string) string {

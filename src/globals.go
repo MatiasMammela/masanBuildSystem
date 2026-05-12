@@ -36,8 +36,9 @@ type Project struct {
 	Headers []*Directory
 	Libraries []*Package
 	Compiler string 
-	CFlags []string
-	LFlags []string
+	Linker string
+	CFlags []string //Compiler flags
+	LFlags []string //Library flags
 	ASMFlags []string
 	LinkerFlags []string
 	Assembler string
