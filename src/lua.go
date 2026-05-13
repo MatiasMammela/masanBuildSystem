@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
-
+	"slices"
 	lua "github.com/yuin/gopher-lua"
 )
 func RegisterStructType[T any](L *lua.LState, name string) {
@@ -534,7 +534,7 @@ func lua_glob_packages(L *lua.LState) int {
 		}
 	}
 
-	pkgs := find_packages(names)
+	pkgs := find_packages(names,false)
 
 	resultTbl := L.NewTable()
 	for _, p := range pkgs {
@@ -547,6 +547,41 @@ func lua_glob_packages(L *lua.LState) int {
 
 	return 1
 }
+
+
+func lua_glob_packages_static(L *lua.LState) int {
+	var names []string
+
+	top := L.GetTop()
+	for i := 1; i <= top; i++ {
+		val := L.Get(i)
+		if str, ok := val.(lua.LString); ok {
+			names = append(names, string(str))
+		} else {
+			L.ArgError(i, "expected string")
+		}
+	}
+
+	pkgs := find_packages(names,true)
+
+	resultTbl := L.NewTable()
+	for _, p := range pkgs {
+		ud := L.NewUserData()
+		ud.Value = p
+		L.SetMetatable(ud, L.GetTypeMetatable("Package"))
+		resultTbl.RawSetString(p.Name, ud)
+	}
+	L.Push(resultTbl)
+
+	return 1
+}
+
+
+
+
+
+
+
 
 func lua_build(L *lua.LState)int{
     ud := L.CheckUserData(1)
@@ -685,12 +720,38 @@ func lua_set_mode(L *lua.LState)int {
     return 0;
 }
 
+
+func lua_set_linking(L *lua.LState) int {
+    ud := L.CheckUserData(1)
+    project, ok := ud.Value.(*Project)
+    if !ok {
+        L.ArgError(1, "expected Project userdata")
+        return 0
+    }
+
+    var options = []string{"dynamic", "static"}
+    mode := L.CheckString(2)
+    if mode == "" {
+        L.ArgError(2, "Linking mode required.  static / dynamic")
+        return 0
+    }
+
+    if !slices.Contains(options, mode) {
+        L.ArgError(2, "Invalid linking mode. Required static / dynamic ")
+        return 0
+    }
+
+    project.Linking = mode
+    return 0
+}
+
 func mbs_loader(L *lua.LState)int{
     mod := L.SetFuncs(L.NewTable(),map[string]lua.LGFunction {
         "project":lua_project,
 		"glob_files":lua_glob_files,
 		"glob_dirs":lua_glob_dirs,
 		"glob_packages":lua_glob_packages,
+		"glob_packages_static":lua_glob_packages_static,
 		"sources":lua_sources,
 		"headers":lua_headers,
 		"debug":lua_debug,
@@ -707,6 +768,7 @@ func mbs_loader(L *lua.LState)int{
 		"version": lua_version,
         "autoconfigure":lua_set_autoconfigure,
         "mode":lua_set_mode,
+		"linking":lua_set_linking,
     })
     L.Push(mod);
     return 1;

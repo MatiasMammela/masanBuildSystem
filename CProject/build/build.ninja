@@ -12,14 +12,14 @@ rule link
   command = g++ $LINKFLAGS $in $LFLAGS -o $out
   description = LINK $out
 
-build /home/masa/masanBuildSystem/CProject/build/obj/test_cpp.o: cc /home/masa/masanBuildSystem/CProject/src/test.cpp
-  CFLAGS = -Wall -Wextra -O2 -std=c++17 -I/home/masa/masanBuildSystem/CProject/headers -I/usr/include/SDL2 -MMD -MF /home/masa/masanBuildSystem/CProject/build/obj/test_cpp.o.d
-  depfile = /home/masa/masanBuildSystem/CProject/build/obj/test_cpp.o.d
-  deps = gcc
 build /home/masa/masanBuildSystem/CProject/build/obj/main_cpp.o: cc /home/masa/masanBuildSystem/CProject/src/main.cpp
   CFLAGS = -Wall -Wextra -O2 -std=c++17 -I/home/masa/masanBuildSystem/CProject/headers -I/usr/include/SDL2 -MMD -MF /home/masa/masanBuildSystem/CProject/build/obj/main_cpp.o.d
   depfile = /home/masa/masanBuildSystem/CProject/build/obj/main_cpp.o.d
   deps = gcc
-build /home/masa/masanBuildSystem/CProject/build/bin/myproject: link /home/masa/masanBuildSystem/CProject/build/obj/test_cpp.o /home/masa/masanBuildSystem/CProject/build/obj/main_cpp.o
-  LFLAGS = --static -lSDL2
+build /home/masa/masanBuildSystem/CProject/build/obj/test_cpp.o: cc /home/masa/masanBuildSystem/CProject/src/test.cpp
+  CFLAGS = -Wall -Wextra -O2 -std=c++17 -I/home/masa/masanBuildSystem/CProject/headers -I/usr/include/SDL2 -MMD -MF /home/masa/masanBuildSystem/CProject/build/obj/test_cpp.o.d
+  depfile = /home/masa/masanBuildSystem/CProject/build/obj/test_cpp.o.d
+  deps = gcc
+build /home/masa/masanBuildSystem/CProject/build/bin/myproject: link /home/masa/masanBuildSystem/CProject/build/obj/main_cpp.o /home/masa/masanBuildSystem/CProject/build/obj/test_cpp.o
+  LFLAGS = -lSDL2 -Wl,-Bstatic -lz -Wl,-Bdynamic -Wl,-Bstatic -lncurses -ltinfo -ldl -Wl,-Bdynamic
   LINKFLAGS = 

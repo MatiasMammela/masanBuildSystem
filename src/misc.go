@@ -21,6 +21,7 @@ func (p *Project) Debug() {
 	fmt.Println("Compiler:", p.Compiler)
 	fmt.Println("Assembler:", p.Assembler);
 	fmt.Println("Linker:", p.Linker);
+	fmt.Println("Linking:", p.Linking);
     fmt.Println("Headers:")
     for _, h := range p.Headers {
         fmt.Println("  -", h.Path)
@@ -52,7 +53,13 @@ func (p *Project) Debug() {
 
     fmt.Println("Libraries:")
     for _, l := range p.Libraries {
-        fmt.Println("  -", l.Libraries, "  " ,l.Headers)
+		
+		linkType := "\033[32mdynamic\033[0m"
+		if l.Static {
+			linkType = "\033[33mstatic\033[0m"
+		}
+		
+		fmt.Printf("  - [%s] %s  %s\n", linkType, l.Libraries, l.Headers)
     }
     fmt.Println("=====================")
 }
@@ -229,15 +236,6 @@ func find_files(patterns []string) []*File {
 
 
 
-
-
-
-
-
-
-
-
-
 func get_pacman_package_options(name string) []string {
     cmd := exec.Command("pacman", "-Ss", name)
     out, err := cmd.Output()
@@ -363,44 +361,87 @@ func download_packages(name string) error {
     return cmd.Run()
 }
 
-func find_packages(names []string) []*Package {
-	var result []*Package
-	for _, name := range names {
-		pkg := &Package{Name: name,Found:false}
 
-		// Check if package exists
-		check := exec.Command("pkg-config", "--exists", name)
-		if err := check.Run(); err != nil {
-			msg("WARNING", "Package "+name+" not found!")
-			if err := download_packages(name); err != nil {
-				msg("ERROR", "Failed to install package "+name+": "+err.Error())
-				result = append(result, pkg)
-				continue
-			}
-			// Retry pkg-config after install
-			if err := exec.Command("pkg-config", "--exists", name).Run(); err != nil {
-				msg("ERROR", "Package "+name+" still not found after installation")
-				result = append(result, pkg)
-				continue
-			}
-		}
 
-		// If found, fetch cflags and libs
-		cflagsCmd := exec.Command("pkg-config", "--cflags-only-I", name)
-		libsCmd := exec.Command("pkg-config", "--libs", name)
+func check_static_libs_available(libs string) (bool, string) {
+    // Parse library names from flags like "-lSDL2 -lncurses"
+    parts := strings.Fields(libs)
+    var missing []string
+    for _, part := range parts {
+        if strings.HasPrefix(part, "-l") {
+            libname := "lib" + strings.TrimPrefix(part, "-l") + ".a"
+            // Search common static lib locations
+            searchPaths := []string{
+                "/usr/lib",
+                "/usr/lib/x86_64-linux-gnu",
+                "/usr/local/lib",
+            }
+            found := false
+            for _, path := range searchPaths {
+                if _, err := os.Stat(filepath.Join(path, libname)); err == nil {
+                    found = true
+                    break
+                }
+            }
+            if !found {
+                missing = append(missing, libname)
+            }
+        }
+    }
+    if len(missing) > 0 {
+        return false, strings.Join(missing, ", ")
+    }
+    return true, ""
+}
 
-		var cflagsOut, libsOut bytes.Buffer
-		cflagsCmd.Stdout = &cflagsOut
-		libsCmd.Stdout = &libsOut
+func find_packages(names []string, static bool) []*Package {
+    var result []*Package
+    for _, name := range names {
+        pkg := &Package{Name: name,Found:false,Static:static}
+        // Check if package exists
+        check := exec.Command("pkg-config", "--exists", name)
+        if err := check.Run(); err != nil {
+            msg("WARNING", "Package "+name+" not found!")
+            if err := download_packages(name); err != nil {
+                msg("ERROR", "Failed to install package "+name+": "+err.Error())
+                result = append(result, pkg)
+                continue
+            }
+            // Retry pkg-config after install
+            if err := exec.Command("pkg-config", "--exists", name).Run(); err != nil {
+                msg("ERROR", "Package "+name+" still not found after installation")
+                result = append(result, pkg)
+                continue
+            }
+        }
+        // If found, fetch cflags and libs
+        cflagsCmd := exec.Command("pkg-config", "--cflags-only-I", name)
+        var libsCmd *exec.Cmd
+        if static {
+            libsCmd = exec.Command("pkg-config", "--libs", "--static", name)
+        } else {
+            libsCmd = exec.Command("pkg-config", "--libs", name)
+        }
 
-		_ = cflagsCmd.Run()
-		_ = libsCmd.Run()
+        var cflagsOut, libsOut bytes.Buffer
+        cflagsCmd.Stdout = &cflagsOut
+        libsCmd.Stdout = &libsOut
+        _ = cflagsCmd.Run()
+        _ = libsCmd.Run()
+        libsStr := strings.TrimSpace(libsOut.String())
 
-		pkg.Found = true
-		pkg.Headers = strings.TrimSpace(cflagsOut.String())
-		pkg.Libraries = strings.TrimSpace(libsOut.String())
-
-		result = append(result, pkg)
-	}
-	return result
+        if static {
+            ok, missing := check_static_libs_available(libsStr)
+            if !ok {
+                msg("ERROR", fmt.Sprintf("Static libraries not found for '%s': %s", name, missing))
+                result = append(result, pkg)
+                continue
+            }
+        }
+        pkg.Found = true
+        pkg.Headers = strings.TrimSpace(cflagsOut.String())
+        pkg.Libraries = libsStr
+        result = append(result, pkg)
+    }
+    return result
 }

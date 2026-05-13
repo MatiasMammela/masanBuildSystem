@@ -24,6 +24,7 @@ type Package struct {
 	Headers string
 	Libraries string
 	Found bool
+	Static bool
 }
 
 type Project struct {
@@ -45,6 +46,7 @@ type Project struct {
 	AutoConfigure bool
 	OS string
 	Mode string
+	Linking string
 }
 
 type Flags struct {

@@ -27,18 +27,24 @@ func ninja_pathcompat(path string) string {
 }
 
 func Generate_packages(proj *Project, ninja *Ninja) {
-	for _, pkg := range proj.Libraries {
-		if pkg.Found {
-			if pkg.Headers != "" {
-				ninja.CFlags = append(ninja.CFlags, pkg.Headers)
-				proj.CFlags = append(proj.CFlags, pkg.Headers)
-			}
-			if pkg.Libraries != "" {
-				ninja.LFlags = append(ninja.LFlags, pkg.Libraries)
-				proj.LFlags = append(proj.LFlags, pkg.Libraries)
-			}
-		}
-	}
+    for _, pkg := range proj.Libraries {
+        if pkg.Found {
+            if pkg.Headers != "" {
+                ninja.CFlags = append(ninja.CFlags, pkg.Headers)
+                proj.CFlags = append(proj.CFlags, pkg.Headers)
+            }
+            if pkg.Libraries != "" {
+                var libs string
+                if pkg.Static {
+                    libs = "-Wl,-Bstatic " + pkg.Libraries + " -Wl,-Bdynamic"
+                } else {
+                    libs = pkg.Libraries
+                }
+                ninja.LFlags = append(ninja.LFlags, libs)
+                proj.LFlags = append(proj.LFlags, libs)
+            }
+        }
+    }
 }
 
 func Generate_headers(Project *Project ,Ninja *Ninja){
