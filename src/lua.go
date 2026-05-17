@@ -6,9 +6,11 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 
 	lua "github.com/yuin/gopher-lua"
 )
+
 func RegisterStructType[T any](L *lua.LState, name string) {
     mt := L.NewTypeMetatable(name)
 
@@ -84,8 +86,6 @@ func RegisterStructType[T any](L *lua.LState, name string) {
     }))
 }
 
-
-
 func lua_glob_dirs(L *lua.LState) int {
 	var patterns []string
 	luaFileDir := L.GetGlobal("__lua_file_dir").String()
@@ -119,7 +119,6 @@ func lua_glob_dirs(L *lua.LState) int {
 
 	return 1
 }
-
 
 func lua_glob_files(L *lua.LState) int {
 	var patterns []string
@@ -222,12 +221,19 @@ func lua_project(L *lua.LState) int {
     }
 	
 
-	info, err := os.Stat(buildDir)
-	if err != nil {
-		L.RaiseError("build directory does not exist or cannot be accessed: %v", err)
+	if err := os.MkdirAll(buildDir, 0755); err != nil {
+		L.RaiseError("failed to create build directory: %v", err)
+		return 0
 	}
-	if !info.IsDir() {
-		L.RaiseError("build directory exists but is not a directory: %s", buildDir)
+
+	if err := os.MkdirAll(filepath.Join(buildDir, "bin"), 0755); err != nil {
+		L.RaiseError("failed to create bin directory: %v", err)
+		return 0
+	}
+	
+	if err := os.MkdirAll(filepath.Join(buildDir, "obj"), 0755); err != nil {
+		L.RaiseError("failed to create obj directory: %v", err)
+		return 0
 	}
 
 	
@@ -238,6 +244,7 @@ func lua_project(L *lua.LState) int {
         L.ArgError(2, "could not resolve absolute build directory path")
         return 0
     }
+
     OS := runtime.GOOS;
     if OS == ""{
         return 0
@@ -246,10 +253,12 @@ func lua_project(L *lua.LState) int {
         Name:          string(name),
         Build_dir_path: abs,
 		Build_file_path: absfile,
-        Buildr_file_dir_path: baseDir,
+        Build_file_dir_path: baseDir,
+		Bin_dir_path: filepath.Join(abs, "bin"),
 		Cwd:            cwd,
         AutoConfigure: true,
         OS: OS,
+        Target_type: "executable",
     }
 
     Projects = append(Projects, project)
@@ -304,7 +313,7 @@ func lua_debug(L *lua.LState) int {
 
 func lua_compiler(L *lua.LState)int {
 	if L.GetTop() < 2 {
-        L.ArgError(1, "expected atleast 2 arguments: headers and project")
+        L.ArgError(1, "expected atleast 2 arguments: compiler and project")
         return 0
     }
 	ud := L.CheckUserData(1)
@@ -322,6 +331,29 @@ func lua_compiler(L *lua.LState)int {
 	project.Compiler = compiler;
 	return 0;
 }
+
+
+func lua_linker(L *lua.LState)int {
+	if L.GetTop() < 2 {
+        L.ArgError(1, "expected atleast 2 arguments: linker and project")
+        return 0
+    }
+	ud := L.CheckUserData(1)
+    project, ok := ud.Value.(*Project)
+    if !ok {
+        L.ArgError(2, "expected Project userdata")
+        return 0
+    }
+
+	linker := L.CheckString(2);
+	if linker == "" {
+  		L.ArgError(3, "expected linker")
+	}
+
+	project.Linker = linker;
+	return 0;
+}
+
 
 func lua_set_cflags(L *lua.LState) int {
     if L.GetTop() < 2 {
@@ -511,7 +543,7 @@ func lua_glob_packages(L *lua.LState) int {
 		}
 	}
 
-	pkgs := find_packages(names)
+	pkgs := find_packages(names,false)
 
 	resultTbl := L.NewTable()
 	for _, p := range pkgs {
@@ -524,6 +556,35 @@ func lua_glob_packages(L *lua.LState) int {
 
 	return 1
 }
+
+
+func lua_glob_packages_static(L *lua.LState) int {
+	var names []string
+
+	top := L.GetTop()
+	for i := 1; i <= top; i++ {
+		val := L.Get(i)
+		if str, ok := val.(lua.LString); ok {
+			names = append(names, string(str))
+		} else {
+			L.ArgError(i, "expected string")
+		}
+	}
+
+	pkgs := find_packages(names,true)
+
+	resultTbl := L.NewTable()
+	for _, p := range pkgs {
+		ud := L.NewUserData()
+		ud.Value = p
+		L.SetMetatable(ud, L.GetTypeMetatable("Package"))
+		resultTbl.RawSetString(p.Name, ud)
+	}
+	L.Push(resultTbl)
+
+	return 1
+}
+
 
 func lua_build(L *lua.LState)int{
     ud := L.CheckUserData(1)
@@ -551,7 +612,6 @@ func lua_build(L *lua.LState)int{
     return 1
 }
 
-
 func lua_copy(L *lua.LState) int {
     
     if L.GetTop() < 2 {
@@ -567,19 +627,54 @@ func lua_copy(L *lua.LState) int {
     }
 
 	var sources[]string;
-  	for i := 1; i < L.GetTop(); i++ {
-        val := L.Get(i)
-        switch val.Type() {
-        case lua.LTString:
+	for i := 1; i < L.GetTop(); i++ {
+		val := L.Get(i)
+		switch val.Type() {
+		case lua.LTString:
 			src := val.String()
-            if !filepath.IsAbs(src) {
-                src = filepath.Join(baseDir, src)
-            }
-            sources = append(sources, src)
-        default:
-            L.ArgError(i, "expected string or table")
-        }
-    }
+			if !filepath.IsAbs(src) {
+				src = filepath.Join(baseDir, src)
+			}
+			sources = append(sources, src)
+		case lua.LTTable:
+			val.(*lua.LTable).ForEach(func(k lua.LValue, v lua.LValue) {
+				if ud, ok := v.(*lua.LUserData); ok {
+					switch item := ud.Value.(type) {
+					case *File:
+						src := item.Cwd
+						if !filepath.IsAbs(src) {
+							src = filepath.Join(baseDir, src)
+						}
+						sources = append(sources, src)
+					case *Directory:
+						src := item.Path
+						if !filepath.IsAbs(src) {
+							src = filepath.Join(baseDir, src)
+						}
+						sources = append(sources, src)
+					}
+				}
+			})
+		case lua.LTUserData:
+			ud := val.(*lua.LUserData)
+			switch item := ud.Value.(type) {
+			case *File:
+				src := item.Cwd
+				if !filepath.IsAbs(src) {
+					src = filepath.Join(baseDir, src)
+				}
+				sources = append(sources, src)
+			case *Directory:
+				src := item.Path
+				if !filepath.IsAbs(src) {
+					src = filepath.Join(baseDir, src)
+				}
+				sources = append(sources, src)
+			}
+		default:
+			L.ArgError(i, "expected string, table, File or Directory")
+		}
+	}
 
 	for _, src := range sources {
 		info, err := os.Stat(src)
@@ -614,18 +709,76 @@ func lua_set_autoconfigure(L *lua.LState)int {
     return 0;
 }
 
+func lua_set_target_type(L *lua.LState) int {
+    ud := L.CheckUserData(1)
+    project, ok := ud.Value.(*Project)
+    if !ok {
+        L.ArgError(1, "expected Project userdata")
+        return 0
+    }
+    valid := []string{"executable", "static_lib", "dynamic_lib", "debug"}
+    mode := L.CheckString(2)
+    if !slices.Contains(valid, mode) {
+        L.ArgError(2, "invalid type. Valid values: executable, static_lib, dynamic_lib, debug")
+        return 0
+    }
+    project.Target_type = mode
+    return 0
+}
+
+func lua_set_linking(L *lua.LState) int {
+    ud := L.CheckUserData(1)
+    project, ok := ud.Value.(*Project)
+    if !ok {
+        L.ArgError(1, "expected Project userdata")
+        return 0
+    }
+
+    var options = []string{"dynamic", "static"}
+    mode := L.CheckString(2)
+    if mode == "" {
+        L.ArgError(2, "Linking mode required.  static / dynamic")
+        return 0
+    }
+
+    if !slices.Contains(options, mode) {
+        L.ArgError(2, "Invalid linking mode. Required static / dynamic ")
+        return 0
+    }
+
+    project.Linking = mode
+    return 0
+}
+
+func lua_set_standard(L *lua.LState) int {
+	ud := L.CheckUserData(1)
+    project, ok := ud.Value.(*Project)
+    if !ok {
+        L.ArgError(1, "expected Project userdata")
+        return 0
+    }
+
+	std := L.CheckString(2)
+
+	project.Standard = std;
+
+	return 0;
+}
+
 func mbs_loader(L *lua.LState)int{
     mod := L.SetFuncs(L.NewTable(),map[string]lua.LGFunction {
         "project":lua_project,
 		"glob_files":lua_glob_files,
 		"glob_dirs":lua_glob_dirs,
 		"glob_packages":lua_glob_packages,
+		"glob_packages_static":lua_glob_packages_static,
 		"sources":lua_sources,
 		"headers":lua_headers,
 		"debug":lua_debug,
 		"packages":lua_packages,
 		"build":lua_build,
 		"compiler":lua_compiler,
+        "linker":lua_linker,
 		"assembler":lua_assembler,
 		"cflags":lua_set_cflags,
 		"lflags":lua_set_lflags,
@@ -634,6 +787,9 @@ func mbs_loader(L *lua.LState)int{
 		"copy":lua_copy,
 		"version": lua_version,
         "autoconfigure":lua_set_autoconfigure,
+        "target_type":lua_set_target_type,
+		"linking":lua_set_linking,
+		"standard":lua_set_standard,
     })
     L.Push(mod);
     return 1;

@@ -24,6 +24,7 @@ type Package struct {
 	Headers string
 	Libraries string
 	Found bool
+	Static bool
 }
 
 type Project struct {
@@ -31,18 +32,24 @@ type Project struct {
 	Cwd string
 	Build_dir_path string
 	Build_file_path string
-	Buildr_file_dir_path string
+	Build_file_dir_path string
+	Bin_dir_path string
 	Sources []*File
 	Headers []*Directory
 	Libraries []*Package
 	Compiler string 
-	CFlags []string
-	LFlags []string
+	Linker string
+	CFlags []string //Compiler flags
+	LFlags []string //Library flags
 	ASMFlags []string
 	LinkerFlags []string
 	Assembler string
 	AutoConfigure bool
 	OS string
+	Target_type string
+	Linking string
+	ObjFiles []string
+	Standard string
 }
 
 type Flags struct {
@@ -57,7 +64,7 @@ var GlobalFlags = &Flags{
 
 var Projects []*Project
 var L *lua.LState
-const Version = 1.2
+const Version = 1.3
 
 const  (  
     Red = "\033[31m"

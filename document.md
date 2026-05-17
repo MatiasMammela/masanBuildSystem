@@ -17,6 +17,7 @@
 - [glob_files](#glob_files)
 - [glob_dirs](#glob_dirs)
 - [glob_packages](#glob_packages)
+- [glob_packages_static](#glob_packages_static)
 - [sources](#sources)
 - [headers](#headers)
 - [cflags](#cflags)
@@ -27,7 +28,9 @@
 - [compiler](#compiler)
 - [assembler](#assembler)
 - [autoconfigure](#autoconfigure)
-
+- [linker](#linker)
+- [standard](#standard)
+- [target_type](#target_type)
 </details>
 
 <details>
@@ -185,6 +188,21 @@ If the package is not found from the users system the function tries to install 
 mypackages = mbs.glob_packages("sdl2","ffreetype2")
 ```
 
+## glob_packages_static
+
+glob_packages_static(pkg_name string...) *Package
+
+Globs packages with the given name using pkg-config utility and links them statically.
+
+First ensures the dynamic package is installed, then checks for static libraries.
+If static libraries are not found, attempts to install a static version of the package.
+
+Use `glob_packages` instead if static linking is not required.
+
+**Example:**
+```lua
+mypackages = mbs.glob_packages_static("ncurses", "zlib")
+```
 ## sources
 
 sources(project *Project, sources *Files ...) void
@@ -211,7 +229,7 @@ mbs.headers(project,mydirs)
 
 cflags(project *Project,flag string...) void
 
-Binds cflags to project.
+Binds compiler-flags to project.
 
 **Example:**
 ```lua
@@ -222,7 +240,7 @@ mbs.cflags(project,"-myflag","-käpytikka")
 
 lflags(project *Project,flag string...) void
 
-Binds lflags to project.
+Binds library-flags to project.
 
 **Example:**
 ```lua
@@ -300,6 +318,52 @@ Autoconfigure is enabled by default by every mbs project.
 ```lua 
 mbs.autoconfigure(project,false)
 ```
+
+## linker 
+
+linker(project *Project , linker *string) void
+
+Sets linker for the current project. 
+
+**Autoconfigure enabled:** uses `-fuse-ld=<linker>` with the compiler as driver.
+Valid values: `bfd`, `gold`, `lld`, `mold`.
+
+**Autoconfigure disabled:** uses the linker directly.
+User is responsible for providing correct flags via `linkerflags` and `lflags`.
+
+**Example:**
+
+```lua 
+mbs.linker(project,"ldd")
+```
+
+## standard
+
+standard(project *Project , standard *string) void
+
+Sets the c / cpp standard
+
+**Example:**
+
+```lua 
+mbs.standard(project,"c11")
+```
+
+## target_type
+
+target_type(project *Project , target *string) void
+
+Sets the build target.Valid values: `dynamic_lib`, `static_lib`, `debug`, `executable`
+
+**Example:**
+
+```lua 
+mbs.target_type(project,"dynamic_lib")
+```
+
+
+
+
 </details>
 
 ## </> Command-line interface
