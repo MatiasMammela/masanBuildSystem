@@ -38,6 +38,11 @@ Globs directories with the given path.")
                    "glob_packages(pkg_name string...) *Package
 Globs packages using pkg-config. If not found, tries to install via package manager.")
 
+    (glob_packages_static 1
+                          "glob_packages_static(pkg_name string...) *Package
+Globs packages and links them statically.
+Ensures dynamic package is installed first, then checks for static libraries.")
+    
     (sources      2
                   "sources(project *Project, sources *Files...) void
 Binds sources to project.")
@@ -66,6 +71,12 @@ Binds cflags to project.")
                   "lflags(project *Project, flag string...) void
 Binds lflags to project.")
 
+ (linker       2
+                  "linker(project *Project, linker string) void
+Sets the linker for the current project.
+autoconfigure enabled: uses -fuse-ld=<linker> with compiler as driver. Valid values: bfd, gold, lld, mold.
+autoconfigure disabled: uses linker directly. User is responsible for correct flags.")
+    
     (asmflags     2
                   "asmflags(project *Project, flag string...) void
 Binds asm flags to project.")
@@ -76,7 +87,13 @@ Binds linker flags to project.")
 
     (autoconfigure 2
                    "autoconfigure(project *Project, enabled bool) void
-Sets autoconfigure on or off. Enabled by default. Runs with build if enabled."))
+Sets autoconfigure on or off. Enabled by default. Runs with build if enabled.")
+ (target_type  2
+                  "target_type(project *Project, type string) void
+Sets the output type. Valid values: executable, static_lib, dynamic_lib, debug.")
+ (standard     2
+                  "standard(project *Project, standard string) void
+Sets the C/C++ standard. Examples: c11, c++17, c++20, gnu11."))
 
   "MBS function definitions: (name min-arg-count docstring)")
 

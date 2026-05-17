@@ -14,11 +14,14 @@ func (p *Project) Debug() {
     fmt.Println("=== Project Debug ===")
     fmt.Println("Name:", p.Name)
 	fmt.Println("OS:", p.OS)
+    fmt.Println("Target type:", p.Target_type)
     fmt.Println("Build Directory Path:", p.Build_dir_path)
 	fmt.Println("Build file Path:", p.Build_file_path)
-	fmt.Println("Build file dir Path:",p.Buildr_file_dir_path)
+	fmt.Println("Build file dir Path:",p.Build_file_dir_path)
+	fmt.Println("Bin dir Path:",p.Bin_dir_path)
 	fmt.Println("CWD:",p.Cwd)
 	fmt.Println("Compiler:", p.Compiler)
+	fmt.Println("Standard:", p.Standard)
 	fmt.Println("Assembler:", p.Assembler);
 	fmt.Println("Linker:", p.Linker);
 	fmt.Println("Linking:", p.Linking);
@@ -51,16 +54,18 @@ func (p *Project) Debug() {
         fmt.Println("  -", f)
     }
 
-    fmt.Println("Libraries:")
-    for _, l := range p.Libraries {
-		
+	fmt.Println("Libraries:")
+	for _, l := range p.Libraries {
 		linkType := "\033[32mdynamic\033[0m"
 		if l.Static {
 			linkType = "\033[33mstatic\033[0m"
 		}
-		
-		fmt.Printf("  - [%s] %s  %s\n", linkType, l.Libraries, l.Headers)
-    }
+		libs := l.Libraries
+		if libs == "" {
+			libs = "(header only)"
+		}
+		fmt.Printf("  - [%s][%s] %s\n", linkType, l.Name, libs)
+	}
     fmt.Println("=====================")
 }
 func list_bound_sources(srcs []*File,project *Project){
@@ -88,7 +93,6 @@ func find_directories(patterns []string) []*Directory {
 			continue
 		}
 		if len(matches) == 0 {
-			// Still record something if no matches
 			msg("WARNING","Directory " + filepath.Base(pattern) + " not found!");
 			result = append(result, &Directory{
 				Name:  filepath.Base(pattern),
@@ -278,12 +282,18 @@ func get_apt_package_options(name string) []string {
     return options
 }
 
+
+func normalize_package_name(name string) string {
+    // Replace _ with [-_] to match both dash and underscore variants
+    return strings.ReplaceAll(strings.ToLower(name), "_", "[-_]")
+}
+
 func get_package_options(pm, name string) []string {
     switch pm {
     case "apt":
-        return get_apt_package_options(name)
+        return get_apt_package_options(normalize_package_name(name))
     case "pacman":
-        return get_pacman_package_options(name)
+        return get_pacman_package_options(normalize_package_name(name))
     default:
         return nil
     }
@@ -323,18 +333,54 @@ func detect_package_manager()string{
 	return "" 
 }
 
-func download_packages(name string) error {
+func download_packages(name string) (string, error) {
+    pm := detect_package_manager()
+    if pm == "" {
+        return "", fmt.Errorf("no supported package manager found")
+    }
+    options := get_package_options(pm, name)
+    if len(options) == 0 {
+        return "", fmt.Errorf("package '%s' not found in %s repositories", name, pm)
+    }
+    pkgname := prompt_package_selection(name, options)
+    if pkgname == "" {
+        return "", fmt.Errorf("no package selected for '%s'", name)
+    }
+    fmt.Printf("Install '%s' using %s? [Y/n]: ", pkgname, pm)
+    var response string
+    fmt.Scanln(&response)
+    response = strings.TrimSpace(strings.ToLower(response))
+    if response != "" && response != "y" && response != "yes" {
+        return "", fmt.Errorf("user declined to install package '%s'", name)
+    }
+    var cmd *exec.Cmd
+    switch pm {
+    case "apt":
+        cmd = exec.Command("sudo", "apt", "install", "-y", pkgname)
+    case "pacman":
+        cmd = exec.Command("sudo", "pacman", "-S", "--noconfirm", pkgname)
+    default:
+        return "", fmt.Errorf("unsupported package manager: %s", pm)
+    }
+    cmd.Stdout = os.Stdout
+    cmd.Stderr = os.Stderr
+    return pkgname, cmd.Run()
+}
+
+
+func download_static_package(name string) error {
     pm := detect_package_manager()
     if pm == "" {
         return fmt.Errorf("no supported package manager found")
     }
 
-    options := get_package_options(pm, name)
+    staticName := name + "-static"
+    options := get_package_options(pm, staticName)
     if len(options) == 0 {
-        return fmt.Errorf("package '%s' not found in %s repositories", name, pm)
+        return fmt.Errorf("no static package found for '%s' in %s repositories", name, pm)
     }
 
-    pkgname := prompt_package_selection(name, options)
+    pkgname := prompt_package_selection(staticName, options)
     if pkgname == "" {
         return fmt.Errorf("no package selected for '%s'", name)
     }
@@ -344,7 +390,7 @@ func download_packages(name string) error {
     fmt.Scanln(&response)
     response = strings.TrimSpace(strings.ToLower(response))
     if response != "" && response != "y" && response != "yes" {
-        return fmt.Errorf("user declined to install package '%s'", name)
+        return fmt.Errorf("user declined to install static package '%s'", name)
     }
 
     var cmd *exec.Cmd
@@ -362,9 +408,7 @@ func download_packages(name string) error {
 }
 
 
-
 func check_static_libs_available(libs string) (bool, string) {
-    // Parse library names from flags like "-lSDL2 -lncurses"
     parts := strings.Fields(libs)
     var missing []string
     for _, part := range parts {
@@ -394,53 +438,112 @@ func check_static_libs_available(libs string) (bool, string) {
     return true, ""
 }
 
+
+func get_pkg_libs(name string, static bool) string {
+    var libsCmd *exec.Cmd
+    if static {
+        libsCmd = exec.Command("pkg-config", "--libs", "--static", name)
+    } else {
+        libsCmd = exec.Command("pkg-config", "--libs", name)
+    }
+    var libsOut bytes.Buffer
+    libsCmd.Stdout = &libsOut
+    _ = libsCmd.Run()
+    return strings.TrimSpace(libsOut.String())
+}
+
+
+func get_pkg_cflags(name string) string {
+    cflagsCmd := exec.Command("pkg-config", "--cflags", name)
+    var cFlagsOut bytes.Buffer
+    cflagsCmd.Stdout = &cFlagsOut
+    _ = cflagsCmd.Run()
+    return strings.TrimSpace(cFlagsOut.String())
+}
+
+func ensure_static_package(name string) error {
+    // First ensure dynamic package exists
+    if err := ensure_dynamic_package(name); err != nil {
+        return err
+    }
+    // Now check if static libs are bundled in the dynamic package
+    if ok, _ := check_static_libs_available(get_pkg_libs(name, true)); ok {
+        return nil
+    }
+    // Static libs not found. ask user to install static package
+    msg("WARNING", fmt.Sprintf("Static libraries not found for '%s'", name))
+    fmt.Printf("'%s' is installed but has no static libraries. Try to install them? [Y/n]: ", name)
+    var response string
+    fmt.Scanln(&response)
+    response = strings.TrimSpace(strings.ToLower(response))
+    if response != "" && response != "y" && response != "yes" {
+        return fmt.Errorf("user declined to install static libraries for '%s'", name)
+    }
+    if err := download_static_package(name); err != nil {
+        return err
+    }
+    if ok, missing := check_static_libs_available(get_pkg_libs(name, true)); !ok {
+        return fmt.Errorf("static libraries still not found: %s", missing)
+    }
+    return nil
+}
+
+func ensure_dynamic_package(name string) error {
+    if exec.Command("pkg-config", "--exists", name).Run() == nil {
+        return nil
+    }
+    pm := detect_package_manager()
+    switch pm {
+    case "pacman":
+        if exec.Command("pacman", "-Q", name).Run() == nil {
+            return fmt.Errorf("'%s' is installed but has no pkg-config support. Use lflags/cflags instead", name)
+        }
+    case "apt":
+        cmd := exec.Command("dpkg-query", "-W", "-f=${Status}", name)
+        out, _ := cmd.Output()
+        if strings.Contains(string(out), "install ok installed") {
+            return fmt.Errorf("'%s' is installed but has no pkg-config support. Use lflags/cflags instead", name)
+        }
+    }
+    msg("WARNING", "Package "+name+" not found!")
+    fmt.Printf("Try to install '%s'? [Y/n]: ", name)
+    var response string
+    fmt.Scanln(&response)
+    response = strings.TrimSpace(strings.ToLower(response))
+    if response != "" && response != "y" && response != "yes" {
+        return fmt.Errorf("user declined to install package '%s'", name)
+    }
+    installed, err := download_packages(name)
+    if err != nil {
+        return err
+    }
+    if exec.Command("pkg-config", "--exists", name).Run() != nil {
+        return fmt.Errorf("'%s' was installed but has no pkg-config support. Use lflags/cflags instead", installed)
+    }
+    return nil
+}
+
 func find_packages(names []string, static bool) []*Package {
     var result []*Package
     for _, name := range names {
         pkg := &Package{Name: name,Found:false,Static:static}
-        // Check if package exists
-        check := exec.Command("pkg-config", "--exists", name)
-        if err := check.Run(); err != nil {
-            msg("WARNING", "Package "+name+" not found!")
-            if err := download_packages(name); err != nil {
-                msg("ERROR", "Failed to install package "+name+": "+err.Error())
-                result = append(result, pkg)
-                continue
-            }
-            // Retry pkg-config after install
-            if err := exec.Command("pkg-config", "--exists", name).Run(); err != nil {
-                msg("ERROR", "Package "+name+" still not found after installation")
-                result = append(result, pkg)
-                continue
-            }
-        }
-        // If found, fetch cflags and libs
-        cflagsCmd := exec.Command("pkg-config", "--cflags-only-I", name)
-        var libsCmd *exec.Cmd
+
+        var err error
         if static {
-            libsCmd = exec.Command("pkg-config", "--libs", "--static", name)
+            err = ensure_static_package(name)
         } else {
-            libsCmd = exec.Command("pkg-config", "--libs", name)
+            err = ensure_dynamic_package(name)
         }
 
-        var cflagsOut, libsOut bytes.Buffer
-        cflagsCmd.Stdout = &cflagsOut
-        libsCmd.Stdout = &libsOut
-        _ = cflagsCmd.Run()
-        _ = libsCmd.Run()
-        libsStr := strings.TrimSpace(libsOut.String())
-
-        if static {
-            ok, missing := check_static_libs_available(libsStr)
-            if !ok {
-                msg("ERROR", fmt.Sprintf("Static libraries not found for '%s': %s", name, missing))
-                result = append(result, pkg)
-                continue
-            }
+        if err != nil {
+            msg("ERROR", err.Error())
+            result = append(result, pkg)
+            continue
         }
+		
         pkg.Found = true
-        pkg.Headers = strings.TrimSpace(cflagsOut.String())
-        pkg.Libraries = libsStr
+        pkg.Headers = get_pkg_cflags(name);
+        pkg.Libraries = get_pkg_libs(name,static);
         result = append(result, pkg)
     }
     return result
