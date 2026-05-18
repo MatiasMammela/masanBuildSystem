@@ -54,17 +54,17 @@ type Project struct {
 
 type Flags struct {
 	builddir string
+	installdir string
+	generate_compdb bool
 }
 
 
-var GlobalFlags = &Flags{
-	builddir: "",
-}
+var GlobalFlags = &Flags{}
 
 
 var Projects []*Project
 var L *lua.LState
-const Version = 1.3
+const Version = 1.4
 
 const  (  
     Red = "\033[31m"

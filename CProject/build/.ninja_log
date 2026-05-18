@@ -1,0 +1,9 @@
+# ninja log v5
+1	244	1779103661869957102	/home/masa/masanBuildSystem/CProject/build/obj/jee_cpp.o	cfa6fce7b44b1470
+2	245	1779103661869957102	/home/masa/masanBuildSystem/CProject/build/obj/main_cpp.o	bd0f47bf014c8a2f
+245	291	1779103661917128627	/home/masa/masanBuildSystem/CProject/build/bin/myProject	aea5800d100adb5e
+0	41	1779104184971917769	/home/masa/masanBuildSystem/CProject/build/bin/myProject	ff8fab5ee977ff3e
+1	49	1779104719019571101	/home/masa/masanBuildSystem/CProject/build/bin/myProject	aea5800d100adb5e
+1	59	1779107195896190242	/home/masa/masanBuildSystem/CProject/build/bin/myProject	ff8fab5ee977ff3e
+0	40	1779107378635713234	/home/masa/masanBuildSystem/CProject/build/bin/myProject	aea5800d100adb5e
+1	62	1779109032189604740	/home/masa/masanBuildSystem/CProject/build/bin/myProject	ff8fab5ee977ff3e
