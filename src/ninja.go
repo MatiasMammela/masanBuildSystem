@@ -40,7 +40,6 @@ func Generate_packages(proj *Project, file *os.File) {
 						proj.LFlags = append_unique(proj.LFlags, flag)
 					}
                 }
-
             }
         }
     }

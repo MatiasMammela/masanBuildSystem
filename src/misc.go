@@ -322,6 +322,15 @@ func prompt_package_selection(name string, options []string) string {
 
 var (
 	package_managers_candidates=[]string{"apt","pacman"}
+	linux_library_paths[]string{
+		"/usr/lib",
+        "/usr/lib/x86_64-linux-gnu",
+        "/usr/local/lib"
+	}
+	linux_header_paths[]string{
+		"/usr/include/",
+	}
+
 )
 
 func detect_package_manager()string{
@@ -414,14 +423,8 @@ func check_static_libs_available(libs string) (bool, string) {
     for _, part := range parts {
         if strings.HasPrefix(part, "-l") {
             libname := "lib" + strings.TrimPrefix(part, "-l") + ".a"
-            // Search common static lib locations
-            searchPaths := []string{
-                "/usr/lib",
-                "/usr/lib/x86_64-linux-gnu",
-                "/usr/local/lib",
-            }
             found := false
-            for _, path := range searchPaths {
+            for _, path := range linux_library_paths {
                 if _, err := os.Stat(filepath.Join(path, libname)); err == nil {
                     found = true
                     break
@@ -547,4 +550,85 @@ func find_packages(names []string, static bool) []*Package {
         result = append(result, pkg)
     }
     return result
+}
+
+func find_library_file(name string, static bool) bool {
+	if static {
+		for _, path := range linux_library_paths {
+			if _, err := os.Stat(filepath.Join(path, "lib"+name+".a")); err == nil {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	cmd := exec.Command("ldconfig", "-p")
+
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+
+
+	for _, line := range strings.Split(string(out), "\n") {
+        if strings.Contains(strings.ToLower(line), strings.ToLower("lib"+name)) {
+            return true
+        }
+    }
+    return false
+}
+
+func find_header_path(name string) string {
+    cmd := exec.Command("find", "/usr/include", "-name", name+".h", "-o", "-name", name+".hpp")
+    out, err := cmd.Output()
+    if err != nil || len(out) == 0 {
+        return ""
+    }
+    // Return the directory of the first found header
+    headerPath := strings.TrimSpace(strings.Split(string(out), "\n")[0])
+    return "-I" + filepath.Dir(headerPath)
+}
+
+func glob_libraries(names []string, static bool) []*Package {
+	var result []*Package
+
+	for _, name := range names {
+		pkg := &Package{
+			Name:   name,
+			Found:  false,
+			Static: static,
+		}
+
+		if !find_library_file(name, static) {
+			if static {
+				msg(
+					"ERROR",
+					fmt.Sprintf(
+						"Static library '%s' not found in system paths",
+						name,
+					),
+				)
+			} else {
+				msg(
+					"ERROR",
+					fmt.Sprintf(
+						"Dynamic library '%s' not found in system paths",
+						name,
+					),
+				)
+			}
+
+			result = append(result, pkg)
+			continue
+		}
+
+		pkg.Found = true
+		pkg.Libraries = "-l" + name
+		pkg.Headers = find_header_path(name)
+
+		result = append(result, pkg)
+	}
+
+	return result
 }

@@ -270,6 +270,45 @@ func lua_project(L *lua.LState) int {
 
     return 1
 }
+
+func lua_glob_libraries(L *lua.LState) int {
+    var names []string
+    for i := 1; i <= L.GetTop(); i++ {
+        names = append(names, L.CheckString(i))
+    }
+    packages := glob_libraries(names, false)
+    // same table building as lua_glob_packages
+    resultTbl := L.NewTable()
+    for _, pkg := range packages {
+        ud := L.NewUserData()
+        ud.Value = pkg
+        L.SetMetatable(ud, L.GetTypeMetatable("Package"))
+        resultTbl.RawSetString(pkg.Name, ud)
+    }
+    L.Push(resultTbl)
+    return 1
+}
+
+
+func lua_glob_libraries_static(L *lua.LState) int {
+    var names []string
+    for i := 1; i <= L.GetTop(); i++ {
+        names = append(names, L.CheckString(i))
+    }
+    packages := glob_libraries(names, true)
+    // same table building as lua_glob_packages
+    resultTbl := L.NewTable()
+    for _, pkg := range packages {
+        ud := L.NewUserData()
+        ud.Value = pkg
+        L.SetMetatable(ud, L.GetTypeMetatable("Package"))
+        resultTbl.RawSetString(pkg.Name, ud)
+    }
+    L.Push(resultTbl)
+    return 1
+}
+
+
 func lua_sources(L *lua.LState) int{
 	if L.GetTop() < 2 {
         L.ArgError(1, "expected atleast 2 arguments: sources and project")
@@ -790,6 +829,8 @@ func mbs_loader(L *lua.LState)int{
         "target_type":lua_set_target_type,
 		"linking":lua_set_linking,
 		"standard":lua_set_standard,
+		"glob_libraries":lua_glob_libraries,
+		"glob_libraries_static":lua_glob_libraries_static,
     })
     L.Push(mod);
     return 1;
