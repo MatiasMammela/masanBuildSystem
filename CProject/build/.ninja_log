@@ -1,12 +1,7 @@
-# ninja log v5
-1	244	1779103661869957102	/home/masa/masanBuildSystem/CProject/build/obj/jee_cpp.o	cfa6fce7b44b1470
-2	245	1779103661869957102	/home/masa/masanBuildSystem/CProject/build/obj/main_cpp.o	bd0f47bf014c8a2f
-245	291	1779103661917128627	/home/masa/masanBuildSystem/CProject/build/bin/myProject	aea5800d100adb5e
-0	41	1779104184971917769	/home/masa/masanBuildSystem/CProject/build/bin/myProject	ff8fab5ee977ff3e
-1	49	1779104719019571101	/home/masa/masanBuildSystem/CProject/build/bin/myProject	aea5800d100adb5e
-1	59	1779107195896190242	/home/masa/masanBuildSystem/CProject/build/bin/myProject	ff8fab5ee977ff3e
-0	40	1779107378635713234	/home/masa/masanBuildSystem/CProject/build/bin/myProject	aea5800d100adb5e
-1	62	1779109032189604740	/home/masa/masanBuildSystem/CProject/build/bin/myProject	ff8fab5ee977ff3e
-0	255	1779190450023262688	/home/masa/masanBuildSystem/CProject/build/obj/main_cpp.o	bd0f47bf014c8a2f
-1	255	1779190450023262688	/home/masa/masanBuildSystem/CProject/build/obj/jee_cpp.o	cfa6fce7b44b1470
-1	79	1779190554430173167	/home/masa/masanBuildSystem/CProject/build/bin/myProject	28fbccc64b6b9826
+# ninja log v7
+0	13	1780155515520162314	/home/masa/masanbuildsystem2/CProject/build/obj/main_asm.o	b21619eda9562474
+0	227	1780155515521449311	/home/masa/masanbuildsystem2/CProject/build/obj/main_cpp.o	981a9f8daf9fd75
+1	228	1780155515521703346	/home/masa/masanbuildsystem2/CProject/build/obj/test_cpp.o	73da0815dfc9387c
+0	228	1780155515521594463	/home/masa/masanbuildsystem2/CProject/build/obj/jee_cpp.o	ca0d3f7943269e27
+0	39	1780155697991165710	/home/masa/masanbuildsystem2/CProject/build/bin/myProject	b4d7a0b5d53c7c86
+1	30	1780155710596165945	/home/masa/masanbuildsystem2/CProject/build/bin/myProject	c2ece42dcf9ab20a

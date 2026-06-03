@@ -5,21 +5,27 @@ rule cc
   description = CC $in
 
 rule asm
-  command =  $ASMFLAGS $in -o $out
+  command = nasm $ASMFLAGS $in -o $out
   description = ASM $in
 
 rule link
   command = g++ $LINKFLAGS $in $LFLAGS -o $out
   description = LINK $out
 
-build /home/masa/masanBuildSystem/CProject/build/obj/main_cpp.o: cc /home/masa/masanBuildSystem/CProject/src/main.cpp
-  CFLAGS = -Wall -Wextra -O2 -std=c++17 -D_GNU_SOURCE -I/home/masa/masanBuildSystem/CProject/headers -MMD -MF /home/masa/masanBuildSystem/CProject/build/obj/main_cpp.o.d
-  depfile = /home/masa/masanBuildSystem/CProject/build/obj/main_cpp.o.d
+build /home/masa/masanbuildsystem2/CProject/build/obj/test_cpp.o: cc /home/masa/masanbuildsystem2/CProject/src/test.cpp
+  CFLAGS = -Wall -Wextra -O2 -std=c++17 -D_GNU_SOURCE -I/home/masa/masanbuildsystem2/CProject/headers -MMD -MF /home/masa/masanbuildsystem2/CProject/build/obj/test_cpp.o.d
+  depfile = /home/masa/masanbuildsystem2/CProject/build/obj/test_cpp.o.d
   deps = gcc
-build /home/masa/masanBuildSystem/CProject/build/obj/jee_cpp.o: cc /home/masa/masanBuildSystem/CProject/src/jee.cpp
-  CFLAGS = -Wall -Wextra -O2 -std=c++17 -D_GNU_SOURCE -I/home/masa/masanBuildSystem/CProject/headers -MMD -MF /home/masa/masanBuildSystem/CProject/build/obj/jee_cpp.o.d
-  depfile = /home/masa/masanBuildSystem/CProject/build/obj/jee_cpp.o.d
+build /home/masa/masanbuildsystem2/CProject/build/obj/jee_cpp.o: cc /home/masa/masanbuildsystem2/CProject/src/jee.cpp
+  CFLAGS = -Wall -Wextra -O2 -std=c++17 -D_GNU_SOURCE -I/home/masa/masanbuildsystem2/CProject/headers -MMD -MF /home/masa/masanbuildsystem2/CProject/build/obj/jee_cpp.o.d
+  depfile = /home/masa/masanbuildsystem2/CProject/build/obj/jee_cpp.o.d
   deps = gcc
-build /home/masa/masanBuildSystem/CProject/build/bin/myProject: link /home/masa/masanBuildSystem/CProject/build/obj/main_cpp.o /home/masa/masanBuildSystem/CProject/build/obj/jee_cpp.o
-  LFLAGS = -lSDL2
+build /home/masa/masanbuildsystem2/CProject/build/obj/main_cpp.o: cc /home/masa/masanbuildsystem2/CProject/src/main.cpp
+  CFLAGS = -Wall -Wextra -O2 -std=c++17 -D_GNU_SOURCE -I/home/masa/masanbuildsystem2/CProject/headers -MMD -MF /home/masa/masanbuildsystem2/CProject/build/obj/main_cpp.o.d
+  depfile = /home/masa/masanbuildsystem2/CProject/build/obj/main_cpp.o.d
+  deps = gcc
+build /home/masa/masanbuildsystem2/CProject/build/obj/main_asm.o: asm /home/masa/masanbuildsystem2/CProject/src/main.asm
+  ASMFLAGS = -f elf64
+build /home/masa/masanbuildsystem2/CProject/build/bin/myProject: link /home/masa/masanbuildsystem2/CProject/build/obj/test_cpp.o /home/masa/masanbuildsystem2/CProject/build/obj/jee_cpp.o /home/masa/masanbuildsystem2/CProject/build/obj/main_cpp.o /home/masa/masanbuildsystem2/CProject/build/obj/main_asm.o
+  LFLAGS = -no-pie
   LINKFLAGS = 
