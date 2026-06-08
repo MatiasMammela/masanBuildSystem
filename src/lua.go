@@ -539,7 +539,7 @@ func lua_headers(L *lua.LState) int{
 }
 func lua_packages(L *lua.LState) int{
 	if L.GetTop() < 2 {
-        L.ArgError(1, "expected atleast 2 arguments: packages and project")
+        L.ArgError(1, "expected atleast 2 arguments: project and packages")
         return 0
     }
 	ud := L.CheckUserData(1)

@@ -18,6 +18,8 @@
 - [glob_dirs](#glob_dirs)
 - [glob_packages](#glob_packages)
 - [glob_packages_static](#glob_packages_static)
+- [glob_libraries](#glob_libraries)
+- [glob_libraries_static](#glob_libraries_static)
 - [sources](#sources)
 - [headers](#headers)
 - [cflags](#cflags)
@@ -66,6 +68,7 @@
 - [Basics](#example-1--basics)
 - [Multiple projects](#example-2--multiple-projects)
 - [Using lua](#example-3--using-lua)
+- [Dealing with packages](#example-4--dealing-with-packages)
 </details>
 
 
@@ -192,7 +195,7 @@ mypackages = mbs.glob_packages("sdl2","ffreetype2")
 
 glob_packages_static(pkg_name string...) *Package
 
-Globs packages with the given name using pkg-config utility and links them statically.
+Globs static packages with the given name using pkg-config utility.
 
 First ensures the dynamic package is installed, then checks for static libraries.
 If static libraries are not found, attempts to install a static version of the package.
@@ -203,6 +206,52 @@ Use `glob_packages` instead if static linking is not required.
 ```lua
 mypackages = mbs.glob_packages_static("ncurses", "zlib")
 ```
+
+
+## glob_libraries
+
+glob_libraries(library_name string...) *Package
+
+Globs libraries with the given name.
+
+Tries to find libraries from the following folders
+
+* "/usr/lib"
+* "/usr/lib/x86_64-linux-gnu"
+* "/usr/local/lib"
+
+And corresponding headers from
+
+* "/usr/include/"
+
+**Example:**
+```lua
+myLibraries = mbs.glob_libraries("SDL2", "ncurses.so")
+```
+
+
+## glob_libraries
+
+glob_libraries_static(library_name string...) *Package
+
+Globs static libraries with the given name.
+
+Tries to find libraries from the following folders
+
+* "/usr/lib"
+* "/usr/lib/x86_64-linux-gnu"
+* "/usr/local/lib"
+
+And corresponding headers from
+
+* "/usr/include/"
+
+**Example:**
+```lua
+myLibraries = mbs.glob_libraries_static("SDL2", "ncurses.a")
+```
+
+
 ## sources
 
 sources(project *Project, sources *Files ...) void
@@ -391,12 +440,12 @@ Prints the version of your mbs
 **Example**
 
 ```
-mbs version
+version
 ```
 
 ## configure (CLI)
 
-mbs confirue
+configure 
 
 Creates a build directory and a build file
 
@@ -405,6 +454,33 @@ Creates a build directory and a build file
 ```
 mbs configure
 ```
+
+## run (CLI)
+
+run <build_file_path>
+
+Compiles the project and runs it
+
+**Example**
+
+```
+mbs run ..
+```
+
+## install (CLI)
+
+install <build_file_path>
+
+Compiles project and moves the output binary to /usr/local/bin
+
+**Example**
+
+```
+mbs install ..
+```
+
+
+
 </details>
 
 ## ⚑  Command-line flags
@@ -418,8 +494,30 @@ Lets you bypass the build directory path set in the build.lua file
 **Example**
 
 ```
-mbs build --builddir myownbuilddir/ ..
+mbs build .. --builddir myownbuilddir/
 ```
+
+## --installdir
+
+Lets you bypass the install default directory path. By default /usr/local/bin
+
+**Example**
+
+```
+mbs install .. --installdir /usr/bin
+```
+
+## --generate_combdb
+
+Generates a compilation database eg `compile_commands.json` to same path as the build.lua file.
+
+**Example**
+
+```
+mbs run .. --generate_combdb
+```
+
+
 </details>
 
 ## 🛠 API
@@ -653,6 +751,70 @@ mbs.packages(project,packages)
 mbs.build(project)
 mbs.debug(project)
 ```
-</details>
 
+
+## Example 4 / Dealing with packages
+
+### build.lua file contents
+
+```lua
+
+mbs = require("mbs")
+
+local project = mbs.project("myProject")
+
+-- A quick rundown of finding packages from ones computer
+
+--[[ 
+
+The first option is to find the package through the pkg-config.
+
+This is the preferred method of finding packages 
+since it lets the user install the possible missing packages on the fly and is by far the most 
+consistent in finding all the resources linked to a package.
+
+--]]
+
+local packages = mbs.glob_packages("sDl3")
+
+--[[
+
+The second best option is to use the glob_libraries function.
+
+Despite its name it outputs a Package* object, meaning that the output is the same as in glob_packages.
+This means that the output/object also tries to find headers for the corresponding library.
+
+--]]
+
+local packages = mbs.glob_libraries("SdL3") 
+
+--[[
+
+The third option is to use lflags and cflags manually. 
+
+May work for some libraries.
+
+--]]
+
+mbs.lflags(project,"-lSDL3")
+mbs.cflags(project,"-I/usr/include/freetype2")
+
+
+-- ^^^^^
+-- Notice that unlike the lflags and clflags the glob_packages and glob_libraries are not case sensitive.
+
+
+--[[ 
+
+glob_packages and glob_libraries also have _static counterparts
+
+--]]
+
+local packages_static = mbs.glob_packages_static("liBz")
+local packages_static = mbs.glob_libraries_static("Libz")
+
+
+mbs.packages(project,packages,packages_static)
+```
+</details>
 

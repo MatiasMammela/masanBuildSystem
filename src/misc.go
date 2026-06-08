@@ -498,6 +498,7 @@ func pkg_config_resolve(name string) string {
     }
     return ""
 }
+
 func ensure_static_package(name string) error {
     // ensure pkg-config package exists
     if err := ensure_dynamic_package(name); err != nil {
@@ -615,14 +616,6 @@ func match_name(input, target string) (bool, string) {
     if idx := strings.Index(targetLower, ".so"); idx >= 0 {
         linkName = linkName[:idx]
     }
-    // Strip version numbers like -2.0 from end
-    linkNameLower := strings.ToLower(linkName)
-    if idx := strings.LastIndex(linkNameLower, "-"); idx >= 0 {
-        suffix := linkNameLower[idx+1:]
-        if len(suffix) > 0 && suffix[0] >= '0' && suffix[0] <= '9' {
-            linkName = linkName[:idx]
-        }
-    }
 
     // Strip lib prefix for comparison only
     targetStripped := strings.TrimPrefix(strings.ToLower(linkName), "lib")
@@ -678,14 +671,15 @@ func find_library_file(name string, static bool) (bool, string) {
 }
 
 func find_header_path(name string) string {
-    cmd := exec.Command("find", "/usr/include", "-name", name+".h", "-o", "-name", name+".hpp")
-    out, err := cmd.Output()
-    if err != nil || len(out) == 0 {
-        return ""
+    for _, headerPath := range linux_header_paths {
+        cmd := exec.Command("find", headerPath, "-name", name+".h", "-o", "-name", name+".hpp")
+        out, err := cmd.Output()
+        if err == nil && len(out) > 0 {
+            headerPath := strings.TrimSpace(strings.Split(string(out), "\n")[0])
+            return "-I" + filepath.Dir(headerPath)
+        }
     }
-    // Return the directory of the first found header
-    headerPath := strings.TrimSpace(strings.Split(string(out), "\n")[0])
-    return "-I" + filepath.Dir(headerPath)
+    return ""
 }
 
 func glob_libraries(names []string, static bool) []*Package {
