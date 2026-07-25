@@ -18,18 +18,23 @@
 - [glob_dirs](#glob_dirs)
 - [glob_packages](#glob_packages)
 - [glob_packages_static](#glob_packages_static)
+- [glob_packages_manual](#glob_packages_manual)
 - [sources](#sources)
 - [headers](#headers)
 - [cflags](#cflags)
+- [cxxflags](#cxxflags)
 - [lflags](#lflags)
 - [asmflags](#asmflags)
 - [linkerflags](#linkerflags)
 - [packages](#packages)
-- [compiler](#compiler)
+- [ccompiler](#ccompiler)
+- [cxxcompiler](#cxxcompiler)
 - [assembler](#assembler)
 - [autoconfigure](#autoconfigure)
 - [linker](#linker)
-- [standard](#standard)
+- [linking](#linking)
+- [cstandard](#cstandard)
+- [cxxstandard](#cxxstandard)
 - [target_type](#target_type)
 </details>
 
@@ -66,6 +71,7 @@
 - [Basics](#example-1--basics)
 - [Multiple projects](#example-2--multiple-projects)
 - [Using lua](#example-3--using-lua)
+- [Dealing with packages](#example-4--dealing-with-packages)
 </details>
 
 
@@ -79,6 +85,7 @@ MBS (Masan build system) is an easy to use build system running on top of the lu
 ## ✨ functions
 <details>
 <summary></summary>
+
 ## project 
 
 project(name string,build_dir_path string) *Project
@@ -183,26 +190,58 @@ Globs packages with the given name using pkg-config utility.
 
 If the package is not found from the users system the function tries to install them through a suitable package manager that the user might have.
 
+Version can be enforced with the following operators
+`==`
+`<=`
+`>=`
+`<`
+`>`
+
+
 **Example:**
 ```lua
-mypackages = mbs.glob_packages("sdl2","ffreetype2")
+mypackages = mbs.glob_packages("sdl2","ffreetype2 > 1.0")
 ```
 
 ## glob_packages_static
 
 glob_packages_static(pkg_name string...) *Package
 
-Globs packages with the given name using pkg-config utility and links them statically.
+Globs static packages with the given name using pkg-config utility.
 
 First ensures the dynamic package is installed, then checks for static libraries.
 If static libraries are not found, attempts to install a static version of the package.
 
 Use `glob_packages` instead if static linking is not required.
 
+Version can be enforced with the following operators
+`==`
+`<=`
+`>=`
+`<`
+`>`
+
+
 **Example:**
 ```lua
-mypackages = mbs.glob_packages_static("ncurses", "zlib")
+mypackages = mbs.glob_packages_static("ncurses", "zlib > 1.0")
 ```
+
+## glob_packages_manual
+
+glob_packages_manual(pkg *Package...) *Package
+
+Globs packages using manually specified data instead of pkg-config.
+
+**Example:**
+```lua
+ pkgs = mbs.glob_packages_manual(
+    { name = "SDL3", libraries = "-lSDL3", headers = "-I/opt/sdl3/include", version = "3.4.12" },
+    { name = "foo", libraries = "-lfoo", static = true }
+  )
+```
+
+
 ## sources
 
 sources(project *Project, sources *Files ...) void
@@ -229,11 +268,22 @@ mbs.headers(project,mydirs)
 
 cflags(project *Project,flag string...) void
 
-Binds compiler-flags to project.
+Binds c compiler-flags to project.
 
 **Example:**
 ```lua
 mbs.cflags(project,"-myflag","-käpytikka")
+```
+
+## cxxflags
+
+cflags(project *Project,flag string...) void
+
+Binds cxx compiler-flags to project.
+
+**Example:**
+```lua
+mbs.cxxflags(project,"-myflag","-käpytikka")
 ```
 
 ## lflags
@@ -281,15 +331,26 @@ Binds packages to project.
 mbs.packages(project,packages)
 ```
 
-## compiler
+## ccompiler
 
-compiler(project *Project,compiler *string)void
+ccompiler(project *Project,compiler *string)void
 
-Binds compiler to project. 
+Binds c compiler to project. 
 
 **Example:**
 ```lua
-mbs.compiler(project,"clang")
+mbs.ccompiler(project,"clang")
+```
+
+## cxxcompiler
+
+cxxcompiler(project *Project,compiler *string)void
+
+Binds cpp compiler to project. 
+
+**Example:**
+```lua
+mbs.cxxcompiler(project,"g++")
 ```
 
 ## assembler
@@ -331,22 +392,42 @@ Valid values: `bfd`, `gold`, `lld`, `mold`.
 **Autoconfigure disabled:** uses the linker directly.
 User is responsible for providing correct flags via `linkerflags` and `lflags`.
 
+
+## linking
+
+linking(project *Project , linking *string) void
+
+Sets linking for the current project libraries. Valid values `static`,`dynamic`.
+
 **Example:**
 
 ```lua 
-mbs.linker(project,"ldd")
+mbs.linking(project,"static")
 ```
 
-## standard
+## cstandard
 
-standard(project *Project , standard *string) void
+cstandard(project *Project , standard *string) void
 
-Sets the c / cpp standard
+Sets the c standard
 
 **Example:**
 
 ```lua 
-mbs.standard(project,"c11")
+mbs.cstandard(project,"c11")
+```
+
+
+## cxxstandard
+
+cxxstandard(project *Project , standard *string) void
+
+Sets the cpp standard
+
+**Example:**
+
+```lua 
+mbs.cxxstandard(project,"c++17")
 ```
 
 ## target_type
@@ -391,12 +472,12 @@ Prints the version of your mbs
 **Example**
 
 ```
-mbs version
+version
 ```
 
 ## configure (CLI)
 
-mbs confirue
+configure 
 
 Creates a build directory and a build file
 
@@ -405,6 +486,33 @@ Creates a build directory and a build file
 ```
 mbs configure
 ```
+
+## run (CLI)
+
+run <build_file_path>
+
+Compiles the project and runs it
+
+**Example**
+
+```
+mbs run ..
+```
+
+## install (CLI)
+
+install <build_file_path>
+
+Compiles project and moves the output binary to /usr/local/bin
+
+**Example**
+
+```
+mbs install ..
+```
+
+
+
 </details>
 
 ## ⚑  Command-line flags
@@ -418,8 +526,30 @@ Lets you bypass the build directory path set in the build.lua file
 **Example**
 
 ```
-mbs build --builddir myownbuilddir/ ..
+mbs build .. --builddir myownbuilddir/
 ```
+
+## --installdir
+
+Lets you bypass the install default directory path. By default /usr/local/bin
+
+**Example**
+
+```
+mbs install .. --installdir /usr/bin
+```
+
+## --generate_combdb
+
+Generates a compilation database eg `compile_commands.json` to same path as the build.lua file.
+
+**Example**
+
+```
+mbs run .. --generate_combdb
+```
+
+
 </details>
 
 ## 🛠 API
@@ -653,6 +783,60 @@ mbs.packages(project,packages)
 mbs.build(project)
 mbs.debug(project)
 ```
-</details>
 
+
+## Example 4 / Dealing with packages
+
+### build.lua file contents
+
+```lua
+
+mbs = require("mbs")
+
+local project = mbs.project("myProject")
+
+-- A quick rundown of finding packages from ones computer
+
+--[[ 
+
+The first option is to find the package through the pkg-config.
+
+This is the preferred method of finding packages 
+since it lets the user install the possible missing packages on the fly and is by far the most 
+consistent in finding all the resources linked to a package.
+
+The function will also try to resolve your package names so they dont necessarily need to be exact / correct.
+
+Version can be enforced as shown below
+--]]
+
+local packages = mbs.glob_packages("sDl3")
+local packages_static = mbs.glob_packages_static("liBz")
+
+local packages_enforce_version = mbs.glob_packages(
+	"sDl2 > 1.0" ,
+	"sdl2 < 1.0" ,
+	"sdl2 <= 1.0" ,
+	"sdl2 => 1.0",
+	"sdl2 == 1.0"
+   )
+
+--[[ 
+
+Second option is to manually describe the packages with glob_packages_manual.
+It takes *Package objects as parameters and outputs them as similar table of objects as glob_packages would.
+
+The flags are case sensitive.
+
+--]]
+
+ local manual_packages = mbs.glob_packages_manual(
+    { name = "SDL3", libraries = "-lSDL3", headers = "-I/opt/sdl3/include", version = "3.4.12" },
+    { name = "foo", libraries = "-lfoo", static = true }
+  )
+
+
+mbs.packages(project,packages,packages_static)
+```
+</details>
 

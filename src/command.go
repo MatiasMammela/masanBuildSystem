@@ -1,11 +1,10 @@
 package src
 
 import (
-	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
-
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -110,25 +109,140 @@ func build(args []string) error {
 	return nil
 }
 
+
+func run(args []string) error {
+    // Run build first
+    if err := build(args); err != nil {
+        return err
+    }
+
+    if len(Projects) == 0 {
+        return fmt.Errorf("no project found")
+    }
+    project := Projects[0]
+
+    // Run ninja
+    ninja := exec.Command("ninja", "-C", project.Build_dir_path)
+    ninja.Stdout = os.Stdout
+    ninja.Stderr = os.Stderr
+    if err := ninja.Run(); err != nil {
+        return fmt.Errorf("ninja failed: %v", err)
+    }
+
+    if GlobalFlags.generate_compdb {
+        compdb := exec.Command("ninja", "-C", project.Build_dir_path, "-t", "compdb")
+        outFile, err := os.Create(filepath.Join(project.Build_file_dir_path, "compile_commands.json"))
+        if err != nil {
+            return fmt.Errorf("failed to create compile_commands.json: %v", err)
+        }
+        defer outFile.Close()
+        compdb.Stdout = outFile
+        compdb.Stderr = os.Stderr
+        if err := compdb.Run(); err != nil {
+            return fmt.Errorf("failed to generate compile_commands.json: %v", err)
+        }
+        msg("OK", "Generated compile_commands.json")
+    }
+
+    binary := filepath.Join(project.Bin_dir_path, project.Name)
+    cmd := exec.Command(binary)
+    cmd.Stdout = os.Stdout
+    cmd.Stderr = os.Stderr
+    cmd.Stdin = os.Stdin
+    return cmd.Run()
+}
+
+func install(args []string) error {
+
+    if err := build(args); err != nil {
+        return err
+    }
+
+    if len(Projects) == 0 {
+        return fmt.Errorf("no project found")
+    }
+    project := Projects[0]
+
+    ninja := exec.Command("ninja", "-C", project.Build_dir_path)
+    ninja.Stdout = os.Stdout
+    ninja.Stderr = os.Stderr
+    if err := ninja.Run(); err != nil {
+        return fmt.Errorf("ninja failed: %v", err)
+    }
+
+    installPath := "/usr/local/bin"
+    if GlobalFlags.installdir != "" {
+        installPath = GlobalFlags.installdir
+    }
+
+    if err := os.MkdirAll(installPath, 0755); err != nil {
+        return fmt.Errorf("failed to create install directory: %v", err)
+    }
+
+    binary := filepath.Join(project.Bin_dir_path, project.Name)
+    dest := filepath.Join(installPath, project.Name)
+
+    if err := copy_file(binary, dest); err != nil {
+        return fmt.Errorf("failed to install binary: %v", err)
+    }
+
+    if err := os.Chmod(dest, 0755); err != nil {
+        return fmt.Errorf("failed to set executable permission: %v", err)
+    }
+
+    msg("OK", fmt.Sprintf("Installed %s to %s", project.Name, dest))
+    return nil
+}
+
+func help() error {
+
+	fmt.Println("Usage: mbs <command> [options] [build_file_path]")
+	fmt.Println()
+	fmt.Println("Commands:")
+	fmt.Println("  configure    Creates a build directory and a build file")
+	fmt.Println("  build        Builds the project from the given build file path")
+	fmt.Println("  run          Builds and runs the project executable")
+	fmt.Println("  install      Installs the built project")
+	fmt.Println("  version      Prints the current mbs version")
+	fmt.Println("  help         Shows this help message")
+	fmt.Println()
+	fmt.Println("Flags:")
+	fmt.Println("  --builddir <path>       Bypass the build directory path set in the build.lua file")
+	fmt.Println("  --installdir <path>     Set the installation directory path (used with install)")
+	fmt.Println("  --generate_compdb       Generate a compile_commands.json for the project")
+	fmt.Println()
+	fmt.Println("Documentation: https://github.com/MatiasMammela/masanBuildSystem/blob/main/document.md")
+
+	return nil
+}
+
 func Init_command(args []string) error{
+
+	if len(args) == 0 {
+		return help()
+	}
 
 	command := args[0]
 	commandArgs := args[1:]
 
-	fs := flag.NewFlagSet(command, flag.ContinueOnError)
-	fs.StringVar(&GlobalFlags.builddir, "builddir", "", "build directory path for the build")
-
-	if err := fs.Parse(commandArgs); err != nil {
+	positional, err := ParseFlags(command, commandArgs)
+	if err != nil {
 		return err
 	}
 
 	switch command {
 	case "configure":
-		return configure(fs.Args())
+		return configure(positional)
 	case "build":
-		return build(fs.Args())
+		return build(positional)
 	case "version":
-		return fmt.Errorf("%.1f" ,Version)
+		return fmt.Errorf("%.1f", Version)
+	case "run":
+		return run(positional)
+	case "install":
+		return install(positional)
+	case "help":
+		return help()
 	default:
 		return fmt.Errorf("unknown command: %s", command)
 	}

@@ -16,22 +16,18 @@ var (
 	c_standard = "c11"
 )
 
-func detect_language(proj *Project) (string, bool) {
-	lang := ""
-	hasAsm := false
+func detect_languages(proj *Project) (hasC bool, hasCpp bool, hasAsm bool) {
 	for _, src := range proj.Sources {
 		switch src.Type {
 		case ".cpp", ".cxx", ".cc":
-			lang = "cpp"
+			hasCpp = true
 		case ".c":
-			if lang == "" { 
-				lang = "c"
-			}
+			hasC = true
 		case ".asm", ".s":
 			hasAsm = true
 		}
 	}
-	return lang, hasAsm
+	return
 }
 
 func default_flags(lang string) []string {
@@ -82,47 +78,75 @@ func detect_assembler() string {
 	return "" 
 }
 
-
+func gnu_source_needed(proj *Project, compiler string) bool {
+	if proj.OS != "linux" {
+		return false
+	}
+	switch compiler {
+	case "gcc", "clang", "cc", "g++", "clang++", "c++":
+		return true
+	default:
+		return false
+	}
+}
 func auto_configure_project(proj *Project) {
-	lang, hasAsm := detect_language(proj)
-
-	if lang == "" {
-		fmt.Println("Warning: no source files found to detect language")
+	hasC, hasCpp, hasAsm := detect_languages(proj)
+	proj.HasC = hasC;
+	proj.HasCpp = hasCpp;
+	if !hasC && !hasCpp {
+		fmt.Println("Warning: no C or C++ source files found to detect language")
 		return
 	}
 
-	if proj.Compiler == "" {
-        proj.Compiler = detect_compiler(lang)
-    }
-
-	proj.CFlags = append_unique(proj.CFlags,default_flags(lang)...);
-
+	if hasC {
+		if proj.CCompiler == "" {
+			proj.CCompiler = detect_compiler("c")
+		}
+		proj.CFlags = append_unique(proj.CFlags, default_flags("c")...)
+ 
+		if proj.CStandard == "" {
+			proj.CStandard = default_standard("c")
+		}
+		proj.CFlags = append_unique(proj.CFlags, "-std="+proj.CStandard)
+ 
+		if gnu_source_needed(proj, proj.CCompiler) {
+			proj.CFlags = append_unique(proj.CFlags, "-D_GNU_SOURCE")
+		}
+	}
 	
-	if proj.Standard == "" {
-		proj.CFlags = append(proj.CFlags,"-std="+default_standard(lang));
-		proj.Standard = default_standard(lang);
-	}else{
-		proj.CFlags=append(proj.CFlags,"-std="+proj.Standard);
+	if hasCpp {
+		if proj.CXXCompiler == "" {
+			proj.CXXCompiler = detect_compiler("cpp")
+		}
+		proj.CXXFlags = append_unique(proj.CXXFlags, default_flags("cpp")...)
+ 
+		if proj.CXXStandard == "" {
+			proj.CXXStandard = default_standard("cpp")
+		}
+		proj.CXXFlags = append_unique(proj.CXXFlags, "-std="+proj.CXXStandard)
+ 
+		if gnu_source_needed(proj, proj.CXXCompiler) {
+			proj.CXXFlags = append_unique(proj.CXXFlags, "-D_GNU_SOURCE")
+		}
 	}
 
-    if proj.OS == "linux" && 
-       (proj.Compiler == "gcc" || proj.Compiler == "g++" || 
-        proj.Compiler == "clang" || proj.Compiler == "clang++") {
-        proj.CFlags = append_unique(proj.CFlags, "-D_GNU_SOURCE")
-    }
-	
 	if hasAsm {
 		proj.Assembler = detect_assembler()
 		proj.ASMFlags = append(proj.ASMFlags,default_flags("asm")...);
 		proj.LFlags = append(proj.LFlags, "-no-pie")
 	}
     
-    if proj.Linker != "" && proj.Linker != proj.Compiler {
-        proj.LinkerFlags = append([]string{"-fuse-ld=" + proj.Linker}, proj.LinkerFlags...)
-        proj.Linker = proj.Compiler 
-    } else {
-        proj.Linker = proj.Compiler
-    }
+	driver := proj.CCompiler
+	if hasCpp {
+		driver = proj.CXXCompiler
+	}
+ 
+	if proj.Linker != "" && proj.Linker != driver {
+		proj.LinkerFlags = append([]string{"-fuse-ld=" + proj.Linker}, proj.LinkerFlags...)
+		proj.Linker = driver
+	} else {
+		proj.Linker = driver
+	}
 }
 
 func detect_compiler(lang string) string {

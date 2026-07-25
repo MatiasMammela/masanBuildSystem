@@ -270,6 +270,7 @@ func lua_project(L *lua.LState) int {
 
     return 1
 }
+
 func lua_sources(L *lua.LState) int{
 	if L.GetTop() < 2 {
         L.ArgError(1, "expected atleast 2 arguments: sources and project")
@@ -311,7 +312,7 @@ func lua_debug(L *lua.LState) int {
     return 1;
 }
 
-func lua_compiler(L *lua.LState)int {
+func lua_c_compiler(L *lua.LState)int {
 	if L.GetTop() < 2 {
         L.ArgError(1, "expected atleast 2 arguments: compiler and project")
         return 0
@@ -328,10 +329,30 @@ func lua_compiler(L *lua.LState)int {
   		L.ArgError(3, "expected Compiler")
 	}
 
-	project.Compiler = compiler;
+	project.CCompiler = compiler;
 	return 0;
 }
 
+func lua_cxx_compiler(L *lua.LState)int {
+	if L.GetTop() < 2 {
+        L.ArgError(1, "expected atleast 2 arguments: compiler and project")
+        return 0
+    }
+	ud := L.CheckUserData(1)
+    project, ok := ud.Value.(*Project)
+    if !ok {
+        L.ArgError(2, "expected Project userdata")
+        return 0
+    }
+
+	compiler := L.CheckString(2);
+	if compiler == "" {
+  		L.ArgError(3, "expected Compiler")
+	}
+
+	project.CXXCompiler = compiler;
+	return 0;
+}
 
 func lua_linker(L *lua.LState)int {
 	if L.GetTop() < 2 {
@@ -500,7 +521,7 @@ func lua_headers(L *lua.LState) int{
 }
 func lua_packages(L *lua.LState) int{
 	if L.GetTop() < 2 {
-        L.ArgError(1, "expected atleast 2 arguments: packages and project")
+        L.ArgError(1, "expected atleast 2 arguments: project and packages")
         return 0
     }
 	ud := L.CheckUserData(1)
@@ -530,20 +551,21 @@ func lua_packages(L *lua.LState) int{
 	return 0;
 }
 
+
+
 func lua_glob_packages(L *lua.LState) int {
-	var names []string
+	var requests []PackageRequest
 
 	top := L.GetTop()
 	for i := 1; i <= top; i++ {
 		val := L.Get(i)
 		if str, ok := val.(lua.LString); ok {
-			names = append(names, string(str))
+			requests = append(requests, parsePackage(string(str)))
 		} else {
 			L.ArgError(i, "expected string")
 		}
 	}
-
-	pkgs := find_packages(names,false)
+	pkgs := find_packages(requests,false)
 
 	resultTbl := L.NewTable()
 	for _, p := range pkgs {
@@ -556,22 +578,80 @@ func lua_glob_packages(L *lua.LState) int {
 
 	return 1
 }
+
+func lua_glob_packages_manual(L *lua.LState) int {
+    top := L.GetTop()
+    var pkgs []*Package
+
+    for i := 1; i <= top; i++ {
+        val := L.Get(i)
+        tbl, ok := val.(*lua.LTable)
+        if !ok {
+            L.ArgError(i, "expected table with name/headers/libraries/version/static fields")
+            return 0
+        }
+
+        nameVal := tbl.RawGetString("name")
+        name, ok := nameVal.(lua.LString)
+        if !ok || string(name) == "" {
+            L.ArgError(i, "package table missing required 'name' field (string)")
+            return 0
+        }
+
+        libsVal := tbl.RawGetString("libraries")
+        libraries, ok := libsVal.(lua.LString)
+        if !ok {
+            L.ArgError(i, fmt.Sprintf("package '%s' missing required 'libraries' field (string)", string(name)))
+            return 0
+        }
+
+        var headers string
+        if h, ok := tbl.RawGetString("headers").(lua.LString); ok {
+            headers = string(h)
+        }
+
+        var version string
+        if v, ok := tbl.RawGetString("version").(lua.LString); ok {
+            version = string(v)
+        }
+
+        static := false
+        if s, ok := tbl.RawGetString("static").(lua.LBool); ok {
+            static = bool(s)
+        }
+
+        pkg := make_package_manual(string(name), headers, string(libraries), version, static)
+
+        pkgs = append(pkgs, pkg)
+    }
+
+    resultTbl := L.NewTable()
+    for _, p := range pkgs {
+        ud := L.NewUserData()
+        ud.Value = p
+        L.SetMetatable(ud, L.GetTypeMetatable("Package"))
+        resultTbl.RawSetString(p.Name, ud)
+    }
+    L.Push(resultTbl)
+    return 1
+}
+
 
 
 func lua_glob_packages_static(L *lua.LState) int {
-	var names []string
+	var requests []PackageRequest
 
 	top := L.GetTop()
 	for i := 1; i <= top; i++ {
 		val := L.Get(i)
 		if str, ok := val.(lua.LString); ok {
-			names = append(names, string(str))
+			requests = append(requests, parsePackage(string(str)))
 		} else {
 			L.ArgError(i, "expected string")
 		}
 	}
+	pkgs := find_packages(requests,true)
 
-	pkgs := find_packages(names,true)
 
 	resultTbl := L.NewTable()
 	for _, p := range pkgs {
@@ -584,7 +664,6 @@ func lua_glob_packages_static(L *lua.LState) int {
 
 	return 1
 }
-
 
 func lua_build(L *lua.LState)int{
     ud := L.CheckUserData(1)
@@ -750,7 +829,7 @@ func lua_set_linking(L *lua.LState) int {
     return 0
 }
 
-func lua_set_standard(L *lua.LState) int {
+func lua_set_c_standard(L *lua.LState) int {
 	ud := L.CheckUserData(1)
     project, ok := ud.Value.(*Project)
     if !ok {
@@ -760,7 +839,22 @@ func lua_set_standard(L *lua.LState) int {
 
 	std := L.CheckString(2)
 
-	project.Standard = std;
+	project.CStandard = std;
+
+	return 0;
+}
+
+func lua_set_cxx_standard(L *lua.LState) int {
+	ud := L.CheckUserData(1)
+    project, ok := ud.Value.(*Project)
+    if !ok {
+        L.ArgError(1, "expected Project userdata")
+        return 0
+    }
+
+	std := L.CheckString(2)
+
+	project.CXXStandard = std;
 
 	return 0;
 }
@@ -777,7 +871,8 @@ func mbs_loader(L *lua.LState)int{
 		"debug":lua_debug,
 		"packages":lua_packages,
 		"build":lua_build,
-		"compiler":lua_compiler,
+		"ccompiler":lua_c_compiler,
+		"cxxcompiler":lua_cxx_compiler,
         "linker":lua_linker,
 		"assembler":lua_assembler,
 		"cflags":lua_set_cflags,
@@ -789,7 +884,9 @@ func mbs_loader(L *lua.LState)int{
         "autoconfigure":lua_set_autoconfigure,
         "target_type":lua_set_target_type,
 		"linking":lua_set_linking,
-		"standard":lua_set_standard,
+		"cstandard":lua_set_c_standard,
+		"cxxstandard":lua_set_cxx_standard,
+		"glob_packages_manual":lua_glob_packages_manual,
     })
     L.Push(mod);
     return 1;

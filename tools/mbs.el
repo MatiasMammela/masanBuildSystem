@@ -42,6 +42,16 @@ Globs packages using pkg-config. If not found, tries to install via package mana
                           "glob_packages_static(pkg_name string...) *Package
 Globs packages and links them statically.
 Ensures dynamic package is installed first, then checks for static libraries.")
+
+    (glob_packages_manual 1
+                          "glob_packages_manual(pkg table...) *Package
+Globs packages using manually specified data instead of pkg-config.
+Example:
+  local pkgs = mbs.glob_packages_manual(
+    { name = \"SDL3\", libraries = \"-lSDL3\", headers = \"-I/opt/sdl3/include\", version = \"3.4.12\" },
+    { name = \"foo\", libraries = \"-lfoo\", static = true }
+  )"
+)
     
     (sources      2
                   "sources(project *Project, sources *Files...) void
@@ -55,9 +65,13 @@ Binds headers to project.")
                   "packages(project *Project, package *Package...) void
 Binds packages to project.")
 
-    (compiler     2
-                  "compiler(project *Project, compiler string) void
-Binds compiler to project.")
+    (ccompiler     2
+                  "ccompiler(project *Project, compiler string) void
+Binds c compiler to project.")
+
+    (cxxcompiler     2
+                  "cxxcompiler(project *Project, compiler string) void
+Binds cxx compiler to project.")
 
     (assembler    2
                   "assembler(project *Project, assembler string) void
@@ -66,6 +80,10 @@ Binds assembler to project.")
     (cflags       2
                   "cflags(project *Project, flag string...) void
 Binds cflags to project.")
+
+        (cxxflags       2
+                  "cxxflags(project *Project, flag string...) void
+Binds cxxflags to project.")
 
     (lflags       2
                   "lflags(project *Project, flag string...) void
@@ -76,7 +94,11 @@ Binds lflags to project.")
 Sets the linker for the current project.
 autoconfigure enabled: uses -fuse-ld=<linker> with compiler as driver. Valid values: bfd, gold, lld, mold.
 autoconfigure disabled: uses linker directly. User is responsible for correct flags.")
-    
+
+    (linking      2
+                  "linking(project *Project, mode string) void
+Sets the linking mode for the project. Valid values: static, dynamic.")
+ 
     (asmflags     2
                   "asmflags(project *Project, flag string...) void
 Binds asm flags to project.")
@@ -91,9 +113,15 @@ Sets autoconfigure on or off. Enabled by default. Runs with build if enabled.")
  (target_type  2
                   "target_type(project *Project, type string) void
 Sets the output type. Valid values: executable, static_lib, dynamic_lib, debug.")
- (standard     2
-                  "standard(project *Project, standard string) void
-Sets the C/C++ standard. Examples: c11, c++17, c++20, gnu11."))
+ (cstandard     2
+                  "cstandard(project *Project, standard string) void
+Sets the C standard. Example: c11.")
+
+ (cxxstandard     2
+                  "cxxstandard(project *Project, standard string) void
+Sets the C++ standard. Example: c++17.")
+
+ )
 
   "MBS function definitions: (name min-arg-count docstring)")
 
