@@ -20,8 +20,10 @@ func (p *Project) Debug() {
 	fmt.Println("Build file dir Path:",p.Build_file_dir_path)
 	fmt.Println("Bin dir Path:",p.Bin_dir_path)
 	fmt.Println("CWD:",p.Cwd)
-	fmt.Println("Compiler:", p.Compiler)
-	fmt.Println("Standard:", p.Standard)
+	fmt.Println("C Compiler:", p.CCompiler)
+	fmt.Println("CXX Compiler:", p.CXXCompiler)
+	fmt.Println("C Standard:", p.CStandard)
+	fmt.Println("CXX Standard:", p.CXXStandard)
 	fmt.Println("Assembler:", p.Assembler);
 	fmt.Println("Linker:", p.Linker);
 	fmt.Println("Linking:", p.Linking);
@@ -39,6 +41,11 @@ func (p *Project) Debug() {
     for _, f := range p.CFlags {
         fmt.Println("  -", f)
     }
+    fmt.Println("CXXFlags:")
+    for _, f := range p.CXXFlags {
+        fmt.Println("  -", f)
+    }
+	
     fmt.Println("LFlags:")
     for _, f := range p.LFlags {
         fmt.Println("  -", f)
@@ -64,7 +71,14 @@ func (p *Project) Debug() {
 		if libs == "" {
 			libs = "(header only)"
 		}
-		fmt.Printf("  - [%s][%s] %s\n", linkType, l.Name, libs)
+
+		var line string
+		if l.Version != "" {
+			line = fmt.Sprintf("  - [%s][%s][%s] %s\n", linkType, l.Name, l.Version, libs)
+		} else {
+			line = fmt.Sprintf("  - [%s][%s] %s\n", linkType, l.Name, libs)
+		}
+		fmt.Print(line)
 	}
     fmt.Println("=====================")
 }
@@ -204,7 +218,6 @@ func find_files(patterns []string) []*File {
 			})
 			continue
 		}
-
 		for _, match := range matches {
 			info, err := os.Stat(match)
 			if err != nil {
@@ -249,7 +262,6 @@ func get_pacman_package_options(name string) []string {
     var options []string
     lines := strings.Split(string(out), "\n")
     for _, line := range lines {
-        // Package lines start with "repo/name version"
         if len(line) > 0 && !strings.HasPrefix(line, " ") {
             parts := strings.Fields(line)
             if len(parts) > 0 {
@@ -416,42 +428,6 @@ func download_static_package(name string) error {
 }
 
 
-func check_static_libs_available(libs string) (bool, string) {
-    parts := strings.Fields(libs)
-    var missing []string
-     for _, part := range parts {
-        if strings.HasPrefix(part, "-l") {
-            libname := strings.TrimPrefix(part, "-l")
-            found := false
-            for _, path := range linux_library_paths {
-                entries, err := os.ReadDir(path)
-                if err != nil {
-                    continue
-                }
-                for _, entry := range entries {
-                    if strings.HasSuffix(entry.Name(), ".a") {
-                        if ok, _ := match_name(libname, entry.Name()); ok {
-                            found = true
-                            break
-                        }
-                    }
-                }
-                if found {
-                    break
-                }
-            }
-            if !found {
-                missing = append(missing, "lib"+libname+".a")
-            }
-        }
-    }
-    if len(missing) > 0 {
-        return false, strings.Join(missing, ", ")
-    }
-    return true, ""
-}
-
-
 func get_pkg_libs(name string, static bool) string {
     resolved := pkg_config_resolve(name)
     if resolved == "" {
@@ -482,43 +458,141 @@ func get_pkg_cflags(name string) string {
 }
 
 func pkg_config_resolve(name string) string {
-    // Try exact name
-    if exec.Command("pkg-config", "--exists", name).Run() == nil {
-        return name
+    candidates := []string{
+        name,
+        strings.ToLower(name),
+        strings.NewReplacer("lib", "").Replace(strings.ToLower(name)),
+        strings.NewReplacer("_", "-").Replace(strings.ToLower(name)),
+        "lib" + strings.ToLower(name),
+        "lib" + strings.NewReplacer("_", "-").Replace(strings.ToLower(name)),
     }
-    // Try lowercase
+
     lower := strings.ToLower(name)
-    if exec.Command("pkg-config", "--exists", lower).Run() == nil {
-        return lower
+
+	stripped := strings.NewReplacer("-", "", "_", "").Replace(lower)
+    if stripped != lower {
+        candidates = append(candidates, stripped, "lib"+stripped)
     }
-    // Try with normalize separators
-    normalized := strings.NewReplacer("_", "-").Replace(lower)
-    if exec.Command("pkg-config", "--exists", normalized).Run() == nil {
-        return normalized
+	
+    i := len(lower)
+    for i > 0 && lower[i-1] >= '0' && lower[i-1] <= '9' {
+        i--
     }
+    if i > 0 && i < len(lower) {
+        base := strings.TrimRight(lower[:i], "-_") 
+        num := lower[i:]
+        candidates = append(candidates,
+            base+"-"+num,
+            base+"_"+num,
+            "lib"+base+"-"+num,
+            "lib"+base+"_"+num,
+            base+"+-"+num+".0",
+            "lib"+base+"+-"+num+".0",
+        )
+    }
+	
+    for _, c := range candidates {
+        if exec.Command("pkg-config", "--exists", c).Run() == nil {
+            return c
+        }
+    }
+
+    matches := find_ambiguous_matches(name)
+    if len(matches) == 1 {
+        return matches[0]
+    }
+
     return ""
 }
 
-func ensure_static_package(name string) error {
-    // ensure pkg-config package exists
-    if err := ensure_dynamic_package(name); err != nil {
-        return err
+func get_lib_search_paths(resolved string) []string {
+    seen := make(map[string]bool)
+    var dirs []string
+
+    add := func(d string) {
+        d = strings.TrimSpace(d)
+        if d != "" && !seen[d] {
+            seen[d] = true
+            dirs = append(dirs, d)
+        }
+    }
+
+    cmd := exec.Command("pkg-config", "--static", "--libs-only-L", resolved)
+    var out bytes.Buffer
+    cmd.Stdout = &out
+    if cmd.Run() == nil {
+        for _, tok := range strings.Fields(out.String()) {
+            add(strings.TrimPrefix(tok, "-L"))
+        }
+    }
+
+    libdirCmd := exec.Command("pkg-config", "--variable=libdir", resolved)
+    var libdirOut bytes.Buffer
+    libdirCmd.Stdout = &libdirOut
+    if libdirCmd.Run() == nil {
+        add(strings.TrimSpace(libdirOut.String()))
+    }
+
+    return dirs
+}
+
+func get_all_lib_names(resolved string) []string {
+    cmd := exec.Command("pkg-config", "--static", "--libs-only-l", resolved)
+    var out bytes.Buffer
+    cmd.Stdout = &out
+    if cmd.Run() != nil {
+        return nil
+    }
+    return strings.Fields(out.String())
+}
+
+func has_static_lib(resolved string) bool {
+    searchDirs := get_lib_search_paths(resolved)
+    if len(searchDirs) == 0 {
+        return false
+    }
+
+    libFlags := get_all_lib_names(resolved)
+    if len(libFlags) == 0 {
+        return false
+    }
+
+    for _, l := range libFlags {
+        name := strings.TrimPrefix(l, "-l")
+        found := false
+        for _, dir := range searchDirs {
+            staticPath := filepath.Join(dir, "lib"+name+".a")
+            if _, err := os.Stat(staticPath); err == nil {
+                found = true
+                break
+            }
+        }
+        if !found {
+            return false
+        }
+    }
+    return true
+}
+
+
+func ensure_static_package(name string) (*PackageInfo, error) {
+    // Ensure the package exists and get its info.
+    info, err := ensure_dynamic_package(name)
+    if err != nil {
+        return nil, err
     }
 
     resolved := pkg_config_resolve(name)
     if resolved == "" {
-        return fmt.Errorf("no pkg-config entry for '%s'", name)
+        return nil, fmt.Errorf("no pkg-config entry for '%s'", name)
     }
 
-    cmd := exec.Command("pkg-config", "--static", "--libs", resolved)
-    err := cmd.Run()
-
-    if err == nil {
-        return nil // static OK
+	if has_static_lib(resolved) {
+        info.Libraries = get_pkg_libs(resolved, true)
+        return info, nil
     }
 
     msg("WARNING", fmt.Sprintf("Static libraries not available for '%s'", name))
-
     fmt.Printf("'%s' has no static pkg-config support. Install static package? [Y/n]: ", name)
 
     var response string
@@ -526,69 +600,278 @@ func ensure_static_package(name string) error {
     response = strings.TrimSpace(strings.ToLower(response))
 
     if response != "" && response != "y" && response != "yes" {
-        return fmt.Errorf("user declined static package for '%s'", name)
+        return nil, fmt.Errorf("user declined static package for '%s'", name)
     }
 
     if err := download_static_package(name); err != nil {
-        return err
+        return nil, err
     }
 
-    // re-check
-    cmd = exec.Command("pkg-config", "--static", "--libs", resolved)
-    err = cmd.Run()
+    // Re-check after installation.
+    if !has_static_lib(resolved) {
+        return nil, fmt.Errorf("static archive still missing for '%s' after install", name)
+    }
 
+    info.Libraries = get_pkg_libs(resolved, true)
+    return info, nil
+}
+
+type PackageInfo struct {
+	Headers   string
+	Libraries string
+    Version   string
+}
+
+func get_pkg_version(name string) string {
+    resolved := pkg_config_resolve(name)
+    if resolved == "" {
+        return ""
+    }
+
+    out, err := exec.Command("pkg-config", "--modversion", resolved).Output()
     if err != nil {
-        return fmt.Errorf("static pkg-config still unavailable for '%s'", name)
+        return ""
+    }
+
+    return strings.TrimSpace(string(out))
+}
+
+func find_dynamic_package(name string) (*PackageInfo, error) {
+	if resolved := pkg_config_resolve(name); resolved != "" {
+		return &PackageInfo{
+			Headers:   get_pkg_cflags(resolved),
+			Libraries: get_pkg_libs(resolved, false),
+			Version: get_pkg_version(resolved),
+		}, nil
+	}
+	
+	headers, libs, err := cmake_find_package(name)
+	if err == nil {
+		return &PackageInfo{
+			Headers:   headers,
+			Libraries: libs,
+			Version: "",
+		}, nil
+	}
+
+	return nil, fmt.Errorf("package '%s' not found", name)
+}
+
+func compareVersions(a, b string) int {
+    parse := func(v string) []int {
+        parts := strings.Split(v, ".")
+        nums := make([]int, len(parts))
+
+        for i, p := range parts {
+            n := 0
+            for _, c := range p {
+                if c < '0' || c > '9' {
+                    break
+                }
+                n = n*10 + int(c-'0')
+            }
+            nums[i] = n
+        }
+
+        return nums
+    }
+
+    va := parse(a)
+    vb := parse(b)
+
+    n := len(va)
+    if len(vb) > n {
+        n = len(vb)
+    }
+
+    for i := 0; i < n; i++ {
+        ai, bi := 0, 0
+        if i < len(va) {
+            ai = va[i]
+        }
+        if i < len(vb) {
+            bi = vb[i]
+        }
+
+        switch {
+        case ai < bi:
+            return -1
+        case ai > bi:
+            return 1
+        }
+    }
+
+    return 0
+}
+
+func checkVersion(installed, op, required string) error {
+    if op == "" || required == "" || installed == "" {
+        return nil
+    }
+
+    cmp := compareVersions(installed, required)
+
+    ok := false
+
+    switch op {
+    case "==":
+        ok = cmp == 0
+    case "!=":
+        ok = cmp != 0
+    case ">":
+        ok = cmp > 0
+    case ">=":
+        ok = cmp >= 0
+    case "<":
+        ok = cmp < 0
+    case "<=":
+        ok = cmp <= 0
+    default:
+        return fmt.Errorf("unknown version operator '%s'", op)
+    }
+
+    if !ok {
+        return fmt.Errorf(
+            "package version mismatch: installed %s, required %s %s",
+            installed, op, required,
+        )
     }
 
     return nil
 }
 
-func ensure_dynamic_package(name string) error {
-    if resolved := pkg_config_resolve(name); resolved != "" {
+
+func find_ambiguous_matches(name string) []string {
+    cmd := exec.Command("pkg-config", "--list-all")
+    var out bytes.Buffer
+    cmd.Stdout = &out
+    if cmd.Run() != nil {
         return nil
     }
-    pm := detect_package_manager()
-    switch pm {
-    case "pacman":
-        if exec.Command("pacman", "-Q", name).Run() == nil {
-            return fmt.Errorf("'%s' is installed but has no pkg-config support. Use lflags/cflags instead", name)
+
+    lower := strings.ToLower(name)
+    var matches []string
+    for _, line := range strings.Split(out.String(), "\n") {
+        fields := strings.Fields(line)
+        if len(fields) == 0 {
+            continue
         }
-    case "apt":
-        cmd := exec.Command("dpkg-query", "-W", "-f=${Status}", name)
-        out, _ := cmd.Output()
-        if strings.Contains(string(out), "install ok installed") {
-            return fmt.Errorf("'%s' is installed but has no pkg-config support. Use lflags/cflags instead", name)
+        pkgName := fields[0]
+        if strings.Contains(strings.ToLower(pkgName), lower) {
+            matches = append(matches, pkgName)
         }
     }
+    return matches
+}
+
+
+func ensure_dynamic_package(name string) (*PackageInfo, error) {
+
+    if info, err := find_dynamic_package(name); err == nil {
+        return info, nil
+    }
+
+    pm := detect_package_manager()
+
+	switch pm {
+	case "pacman":
+		if exec.Command("pacman", "-Q", name).Run() == nil {
+			if matches := find_ambiguous_matches(name); len(matches) > 1 {
+				return nil, fmt.Errorf("'%s' is ambiguous - matches multiple pkg-config entries:\n%s \nPlease specify the exact name in your build file", name, strings.Join(matches,"\n"))
+			}
+			return nil, fmt.Errorf("'%s' is installed but might not have pkg-config or CMake support with the name %s. Use lflags/cflags instead", name, name)
+		}
+
+	case "apt":
+		cmd := exec.Command("dpkg-query", "-W", "-f=${Status}", name)
+		out, _ := cmd.Output()
+		if strings.Contains(string(out), "install ok installed") {
+			if matches := find_ambiguous_matches(name); len(matches) > 1 {
+				return nil, fmt.Errorf("'%s' is ambiguous - matches multiple pkg-config entries:\n %s \nPlease specify the exact name in your build file", name, strings.Join(matches, "\n"))
+			}
+			return nil, fmt.Errorf("'%s' is installed but might not have pkg-config or CMake support with name %s. Use lflags/cflags instead", name, name)
+		}
+	}
+
     msg("WARNING", "Package "+name+" not found!")
     fmt.Printf("Try to install '%s'? [Y/n]: ", name)
+
     var response string
     fmt.Scanln(&response)
     response = strings.TrimSpace(strings.ToLower(response))
+
     if response != "" && response != "y" && response != "yes" {
-        return fmt.Errorf("user declined to install package '%s'", name)
+        return nil, fmt.Errorf("user declined to install package '%s'", name)
     }
-    installed, err := download_packages(name)
+
+    if _, err := download_packages(name); err != nil {
+        return nil, err
+    }
+
+    info, err := find_dynamic_package(name)
     if err != nil {
-        return err
+        return nil, fmt.Errorf("'%s' was installed but could not be found via pkg-config or CMake", name)
     }
-    if exec.Command("pkg-config", "--exists", name).Run() != nil {
-        return fmt.Errorf("'%s' was installed but has no pkg-config support. Use lflags/cflags instead", installed)
-    }
-    return nil
+
+    return info, nil
 }
 
-func find_packages(names []string, static bool) []*Package {
-    var result []*Package
-    for _, name := range names {
-        pkg := &Package{Name: name,Found:false,Static:static}
+func cmake_find_package(name string) (headers string, libraries string, err error) {
+	compileCmd := exec.Command(
+		"cmake",
+		"--find-package",
+		"-DNAME="+name,
+		"-DCOMPILER_ID=GNU",
+		"-DLANGUAGE=CXX",
+		"-DMODE=COMPILE",
+	)
 
-        var err error
+	compileOut, err := compileCmd.Output()
+	if err != nil {
+		return "", "", fmt.Errorf("package '%s' not found", name)
+	}
+
+	linkCmd := exec.Command(
+		"cmake",
+		"--find-package",
+		"-DNAME="+name,
+		"-DCOMPILER_ID=GNU",
+		"-DLANGUAGE=CXX",
+		"-DMODE=LINK",
+	)
+
+	linkOut, err := linkCmd.Output()
+	if err != nil {
+		return "", "", fmt.Errorf("package '%s' found but link information unavailable", name)
+	}
+
+	return strings.TrimSpace(string(compileOut)),
+		strings.TrimSpace(string(linkOut)),
+		nil
+}
+
+
+
+
+func find_packages(requests []PackageRequest, static bool) []*Package {
+    var result []*Package
+
+    for _, req := range requests {
+        pkg := &Package{
+            Name:   req.Name,
+            Found:  false,
+            Static: static,
+        }
+
+        var (
+            info *PackageInfo
+            err  error
+        )
+
         if static {
-            err = ensure_static_package(name)
+            info, err = ensure_static_package(req.Name)
         } else {
-            err = ensure_dynamic_package(name)
+            info, err = ensure_dynamic_package(req.Name)
         }
 
         if err != nil {
@@ -596,114 +879,151 @@ func find_packages(names []string, static bool) []*Package {
             result = append(result, pkg)
             continue
         }
-		
-        pkg.Found = true
-        pkg.Headers = get_pkg_cflags(name);
-        pkg.Libraries = get_pkg_libs(name,static);
-        result = append(result, pkg)
-    }
-    return result
-}
 
-
-
-func match_name(input, target string) (bool, string) {
-    inputLower := strings.ToLower(input)
-    targetLower := strings.ToLower(target)
-
-    // Strip .so and version suffixes from target (preserve original case)
-    linkName := target
-    if idx := strings.Index(targetLower, ".so"); idx >= 0 {
-        linkName = linkName[:idx]
-    }
-
-    // Strip lib prefix for comparison only
-    targetStripped := strings.TrimPrefix(strings.ToLower(linkName), "lib")
-    inputStripped := strings.TrimPrefix(inputLower, "lib")
-
-    if inputStripped == targetStripped {
-        return true, strings.TrimPrefix(linkName, "lib")
-    }
-
-    inputNorm := strings.NewReplacer("-", "", "_", "").Replace(inputStripped)
-    targetNorm := strings.NewReplacer("-", "", "_", "").Replace(targetStripped)
-
-    if inputNorm == targetNorm {
-        return true, strings.TrimPrefix(linkName, "lib")
-    }
-    return false, ""
-}
-func find_library_file(name string, static bool) (bool, string) {
-    if static {
-        for _, path := range linux_library_paths {
-            if _, err := os.Stat(filepath.Join(path, "lib"+name+".a")); err == nil {
-                return true, name
-            }
-            entries, err := os.ReadDir(path)
-            if err != nil {
-                continue
-            }
-            for _, entry := range entries {
-                if strings.HasSuffix(entry.Name(), ".a") {
-                    libName := strings.TrimSuffix(entry.Name(), ".a")
-                    if ok, matched := match_name(name, libName); ok {
-                        return true, strings.TrimPrefix(matched, "lib")
-                    }
-                }
-            }
-        }
-        return false, ""
-    }
-    cmd := exec.Command("ldconfig", "-p")
-    out, err := cmd.Output()
-    if err != nil {
-        return false, ""
-    }
-    for _, line := range strings.Split(string(out), "\n") {
-        parts := strings.Fields(line)
-        if len(parts) > 0 {
-            if ok, matched := match_name(name, parts[0]); ok {
-                return true, strings.TrimPrefix(matched, "lib")
-            }
-        }
-    }
-    return false, ""
-}
-
-func find_header_path(name string) string {
-    for _, headerPath := range linux_header_paths {
-        cmd := exec.Command("find", headerPath, "-name", name+".h", "-o", "-name", name+".hpp")
-        out, err := cmd.Output()
-        if err == nil && len(out) > 0 {
-            headerPath := strings.TrimSpace(strings.Split(string(out), "\n")[0])
-            return "-I" + filepath.Dir(headerPath)
-        }
-    }
-    return ""
-}
-
-func glob_libraries(names []string, static bool) []*Package {
-    var result []*Package
-    for _, name := range names {
-        pkg := &Package{
-            Name:   name,
-            Found:  false,
-            Static: static,
-        }
-        ok, linkName := find_library_file(name, static)
-        if !ok {
-            if static {
-                msg("ERROR", fmt.Sprintf("Static library '%s' not found in system paths", name))
-            } else {
-                msg("ERROR", fmt.Sprintf("Dynamic library '%s' not found in system paths", name))
-            }
+        if err := checkVersion(info.Version, req.Operator, req.Version); err != nil {
+            msg("ERROR", err.Error() + " For " + req.Name)
             result = append(result, pkg)
             continue
         }
+
         pkg.Found = true
-        pkg.Libraries = "-l" + linkName
-        pkg.Headers = find_header_path(name)
+        pkg.Headers = info.Headers
+        pkg.Libraries = info.Libraries
+		pkg.Version = info.Version
         result = append(result, pkg)
     }
+
     return result
 }
+
+func parsePackage(s string) PackageRequest {
+    operators := []string{">=", "<=", "==", ">", "<"}
+
+    for _, op := range operators {
+        if idx := strings.Index(s, op); idx != -1 {
+            return PackageRequest{
+                Name:     strings.TrimSpace(s[:idx]),
+                Operator: op,
+                Version:  strings.TrimSpace(s[idx+len(op):]),
+            }
+        }
+    }
+
+    return PackageRequest{
+        Name: strings.TrimSpace(s),
+    }
+}
+
+func make_package_manual(name, headers, libraries, version string, static bool) *Package {
+    pkg := &Package{
+        Name:      name,
+        Found:     false,
+        Static:    static,
+        Headers:   headers,
+        Libraries: libraries,
+        Version:   version,
+    }
+
+    if name == "" {
+        msg("ERROR", "manual package: 'name' is required")
+        return pkg
+    }
+    if libraries == "" {
+        msg("ERROR", fmt.Sprintf("manual package '%s': 'libraries' is required", name))
+        return pkg
+    }
+
+    // Sanity check header include paths (-I flags)
+    for _, tok := range strings.Fields(headers) {
+        if !strings.HasPrefix(tok, "-I") {
+            continue
+        }
+        dir := strings.TrimPrefix(tok, "-I")
+        if dir == "" {
+            continue
+        }
+        if info, err := os.Stat(dir); err != nil {
+            msg("ERROR", fmt.Sprintf("manual package '%s': header path '%s' does not exist", name, dir))
+            return pkg
+        } else if !info.IsDir() {
+            msg("ERROR", fmt.Sprintf("manual package '%s': header path '%s' is not a directory", name, dir))
+            return pkg
+        }
+    }
+
+    // Sanity check library search paths (-L flags), if any were given
+    var libDirs []string
+    for _, tok := range strings.Fields(libraries) {
+        if !strings.HasPrefix(tok, "-L") {
+            continue
+        }
+        dir := strings.TrimPrefix(tok, "-L")
+        if dir == "" {
+            continue
+        }
+        if info, err := os.Stat(dir); err != nil {
+            msg("ERROR", fmt.Sprintf("manual package '%s': library path '%s' does not exist", name, dir))
+            return pkg
+        } else if !info.IsDir() {
+            msg("ERROR", fmt.Sprintf("manual package '%s': library path '%s' is not a directory", name, dir))
+            return pkg
+        }
+        libDirs = append(libDirs, dir)
+    }
+
+    searchDirs := append([]string{}, libDirs...)
+    searchDirs = append(searchDirs, linux_library_paths...)
+
+	for _, tok := range strings.Fields(libraries) {
+		if !strings.HasPrefix(tok, "-l") {
+			continue
+		}
+		libName := strings.TrimPrefix(tok, "-l")
+		found := false
+		for _, dir := range searchDirs {
+			if static {
+				if _, err := os.Stat(filepath.Join(dir, "lib"+libName+".a")); err == nil {
+					found = true
+					break
+				}
+			} else {
+				if _, err := os.Stat(filepath.Join(dir, "lib"+libName+".so")); err == nil {
+					found = true
+					break
+				}
+				entries, err := os.ReadDir(dir)
+				if err != nil {
+					continue
+				}
+				prefix := "lib" + libName + ".so"
+				for _, e := range entries {
+					if strings.HasPrefix(e.Name(), prefix) {
+						rest := strings.TrimPrefix(e.Name(), prefix)
+						if rest == "" || strings.HasPrefix(rest, ".") {
+							found = true
+							break
+						}
+					}
+				}
+			}
+			if found {
+				break
+			}
+		}
+		if !found {
+			msg("ERROR", fmt.Sprintf(
+				"manual package '%s': could not find 'lib%s%s' in any known library path (checked: %s)",
+				name, libName, map[bool]string{true: ".a", false: ".so"}[static], strings.Join(searchDirs, ", "),
+			))
+			return pkg
+		}
+	}
+
+    pkg.Found = true
+    return pkg
+}
+
+
+
+
+

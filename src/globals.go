@@ -19,12 +19,19 @@ type Directory struct {
 	Found bool
 }
 
+type PackageRequest struct {
+    Name     string
+    Operator string
+    Version  string
+}
+
 type Package struct {
 	Name string
 	Headers string
 	Libraries string
 	Found bool
 	Static bool
+	Version string
 }
 
 type Project struct {
@@ -37,10 +44,13 @@ type Project struct {
 	Sources []*File
 	Headers []*Directory
 	Libraries []*Package
-	Compiler string 
+	PublicLibraries []*Package
+	CCompiler string
+	CXXCompiler string
 	Linker string
-	CFlags []string //Compiler flags
-	LFlags []string //Library flags
+	CFlags []string 
+	CXXFlags []string 
+	LFlags []string
 	ASMFlags []string
 	LinkerFlags []string
 	Assembler string
@@ -49,7 +59,10 @@ type Project struct {
 	Target_type string
 	Linking string
 	ObjFiles []string
-	Standard string
+	CStandard string
+	CXXStandard string
+	HasCpp bool
+	HasC bool
 }
 
 type Flags struct {

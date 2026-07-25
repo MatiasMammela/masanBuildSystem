@@ -18,19 +18,36 @@ func ninja_pathcompat(path string) string {
 
 func Generate_headers(proj *Project, file *os.File) {
     for _, header := range proj.Headers {
-        proj.CFlags = append(proj.CFlags, "-I"+header.Path)
+        if proj.HasC { 
+			proj.CFlags = append(proj.CFlags, "-I"+header.Path)
+		}
+		if proj.HasCpp {
+			proj.CXXFlags = append(proj.CXXFlags, "-I"+header.Path)
+		}
     }
 }
 
 func Generate_packages(proj *Project, file *os.File) {
     for _, pkg := range proj.Libraries {
         if pkg.Found {
+
+			if proj.Linking == "static" {
+                pkg.Static = true
+            }else if proj.Linking == "dynamic" {
+				pkg.Static = false
+			}
+			
             if pkg.Headers != "" {
                 for _, flag := range strings.Fields(pkg.Headers){
-                    proj.CFlags = append_unique(proj.CFlags, flag)
+					if proj.HasC {
+						proj.CFlags = append_unique(proj.CFlags, flag)
+					}
+					if proj.HasCpp {
+						proj.CXXFlags = append_unique(proj.CXXFlags, flag)
+					}
                 }
             }
-            if pkg.Libraries != "" {
+            if pkg.Libraries != "" && proj.Target_type != "static_lib" {
                 var libs string
                 if pkg.Static {
                     libs = "-Wl,-Bstatic " + pkg.Libraries + " -Wl,-Bdynamic"
@@ -58,9 +75,13 @@ func Generate_sources(proj *Project, file *os.File) {
         proj.ObjFiles = append(proj.ObjFiles, objPath)
         depFile := objPath + ".d"
         switch src.Type {
-        case ".c", ".cpp":
+        case ".c":
             fmt.Fprintf(file, "build %s: cc %s\n  CFLAGS = %s -MMD -MF %s\n",
                 objPath, src.Cwd, strings.Join(proj.CFlags, " "), depFile)
+            fmt.Fprintf(file, "  depfile = %s\n  deps = gcc\n", depFile)
+        case ".cpp", ".cc", ".cxx":
+            fmt.Fprintf(file, "build %s: cxx %s\n  CXXFLAGS = %s -MMD -MF %s\n",
+                objPath, src.Cwd, strings.Join(proj.CXXFlags, " "), depFile)
             fmt.Fprintf(file, "  depfile = %s\n  deps = gcc\n", depFile)
         case ".asm":
             fmt.Fprintf(file, "build %s: asm %s\n  ASMFLAGS = %s\n",
@@ -118,7 +139,13 @@ func Generate_rules(proj *Project, file *os.File) {
 	fmt.Fprintf(
 		file,
 		"rule cc\n  command = %s $CFLAGS -c $in -o $out\n  description = CC $in\n\n",
-		proj.Compiler,
+		proj.CCompiler,
+	)
+
+	fmt.Fprintf(
+		file,
+		"rule cxx\n  command = %s $CXXFLAGS -c $in -o $out\n  description = CXX $in\n\n",
+		proj.CXXCompiler,
 	)
 
 	fmt.Fprintf(

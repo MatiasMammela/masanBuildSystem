@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	_ "embed"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -195,12 +194,8 @@ func install(args []string) error {
     return nil
 }
 
-//go:embed banner.txt
-var Banner string
-
 func help() error {
 
-	fmt.Println(Banner)
 	fmt.Println("Usage: mbs <command> [options] [build_file_path]")
 	fmt.Println()
 	fmt.Println("Commands:")

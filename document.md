@@ -18,20 +18,23 @@
 - [glob_dirs](#glob_dirs)
 - [glob_packages](#glob_packages)
 - [glob_packages_static](#glob_packages_static)
-- [glob_libraries](#glob_libraries)
-- [glob_libraries_static](#glob_libraries_static)
+- [glob_packages_manual](#glob_packages_manual)
 - [sources](#sources)
 - [headers](#headers)
 - [cflags](#cflags)
+- [cxxflags](#cxxflags)
 - [lflags](#lflags)
 - [asmflags](#asmflags)
 - [linkerflags](#linkerflags)
 - [packages](#packages)
-- [compiler](#compiler)
+- [ccompiler](#ccompiler)
+- [cxxcompiler](#cxxcompiler)
 - [assembler](#assembler)
 - [autoconfigure](#autoconfigure)
 - [linker](#linker)
-- [standard](#standard)
+- [linking](#linking)
+- [cstandard](#cstandard)
+- [cxxstandard](#cxxstandard)
 - [target_type](#target_type)
 </details>
 
@@ -82,6 +85,7 @@ MBS (Masan build system) is an easy to use build system running on top of the lu
 ## ✨ functions
 <details>
 <summary></summary>
+
 ## project 
 
 project(name string,build_dir_path string) *Project
@@ -186,9 +190,17 @@ Globs packages with the given name using pkg-config utility.
 
 If the package is not found from the users system the function tries to install them through a suitable package manager that the user might have.
 
+Version can be enforced with the following operators
+`==`
+`<=`
+`>=`
+`<`
+`>`
+
+
 **Example:**
 ```lua
-mypackages = mbs.glob_packages("sdl2","ffreetype2")
+mypackages = mbs.glob_packages("sdl2","ffreetype2 > 1.0")
 ```
 
 ## glob_packages_static
@@ -202,53 +214,31 @@ If static libraries are not found, attempts to install a static version of the p
 
 Use `glob_packages` instead if static linking is not required.
 
+Version can be enforced with the following operators
+`==`
+`<=`
+`>=`
+`<`
+`>`
+
+
 **Example:**
 ```lua
-mypackages = mbs.glob_packages_static("ncurses", "zlib")
+mypackages = mbs.glob_packages_static("ncurses", "zlib > 1.0")
 ```
 
+## glob_packages_manual
 
-## glob_libraries
+glob_packages_manual(pkg *Package...) *Package
 
-glob_libraries(library_name string...) *Package
-
-Globs libraries with the given name.
-
-Tries to find libraries from the following folders
-
-* "/usr/lib"
-* "/usr/lib/x86_64-linux-gnu"
-* "/usr/local/lib"
-
-And corresponding headers from
-
-* "/usr/include/"
+Globs packages using manually specified data instead of pkg-config.
 
 **Example:**
 ```lua
-myLibraries = mbs.glob_libraries("SDL2", "ncurses.so")
-```
-
-
-## glob_libraries
-
-glob_libraries_static(library_name string...) *Package
-
-Globs static libraries with the given name.
-
-Tries to find libraries from the following folders
-
-* "/usr/lib"
-* "/usr/lib/x86_64-linux-gnu"
-* "/usr/local/lib"
-
-And corresponding headers from
-
-* "/usr/include/"
-
-**Example:**
-```lua
-myLibraries = mbs.glob_libraries_static("SDL2", "ncurses.a")
+ pkgs = mbs.glob_packages_manual(
+    { name = "SDL3", libraries = "-lSDL3", headers = "-I/opt/sdl3/include", version = "3.4.12" },
+    { name = "foo", libraries = "-lfoo", static = true }
+  )
 ```
 
 
@@ -278,11 +268,22 @@ mbs.headers(project,mydirs)
 
 cflags(project *Project,flag string...) void
 
-Binds compiler-flags to project.
+Binds c compiler-flags to project.
 
 **Example:**
 ```lua
 mbs.cflags(project,"-myflag","-käpytikka")
+```
+
+## cxxflags
+
+cflags(project *Project,flag string...) void
+
+Binds cxx compiler-flags to project.
+
+**Example:**
+```lua
+mbs.cxxflags(project,"-myflag","-käpytikka")
 ```
 
 ## lflags
@@ -330,15 +331,26 @@ Binds packages to project.
 mbs.packages(project,packages)
 ```
 
-## compiler
+## ccompiler
 
-compiler(project *Project,compiler *string)void
+ccompiler(project *Project,compiler *string)void
 
-Binds compiler to project. 
+Binds c compiler to project. 
 
 **Example:**
 ```lua
-mbs.compiler(project,"clang")
+mbs.ccompiler(project,"clang")
+```
+
+## cxxcompiler
+
+cxxcompiler(project *Project,compiler *string)void
+
+Binds cpp compiler to project. 
+
+**Example:**
+```lua
+mbs.cxxcompiler(project,"g++")
 ```
 
 ## assembler
@@ -380,22 +392,42 @@ Valid values: `bfd`, `gold`, `lld`, `mold`.
 **Autoconfigure disabled:** uses the linker directly.
 User is responsible for providing correct flags via `linkerflags` and `lflags`.
 
+
+## linking
+
+linking(project *Project , linking *string) void
+
+Sets linking for the current project libraries. Valid values `static`,`dynamic`.
+
 **Example:**
 
 ```lua 
-mbs.linker(project,"ldd")
+mbs.linking(project,"static")
 ```
 
-## standard
+## cstandard
 
-standard(project *Project , standard *string) void
+cstandard(project *Project , standard *string) void
 
-Sets the c / cpp standard
+Sets the c standard
 
 **Example:**
 
 ```lua 
-mbs.standard(project,"c11")
+mbs.cstandard(project,"c11")
+```
+
+
+## cxxstandard
+
+cxxstandard(project *Project , standard *string) void
+
+Sets the cpp standard
+
+**Example:**
+
+```lua 
+mbs.cxxstandard(project,"c++17")
 ```
 
 ## target_type
@@ -773,45 +805,35 @@ This is the preferred method of finding packages
 since it lets the user install the possible missing packages on the fly and is by far the most 
 consistent in finding all the resources linked to a package.
 
+The function will also try to resolve your package names so they dont necessarily need to be exact / correct.
+
+Version can be enforced as shown below
 --]]
 
 local packages = mbs.glob_packages("sDl3")
+local packages_static = mbs.glob_packages_static("liBz")
 
---[[
-
-The second best option is to use the glob_libraries function.
-
-Despite its name it outputs a Package* object, meaning that the output is the same as in glob_packages.
-This means that the output/object also tries to find headers for the corresponding library.
-
---]]
-
-local packages = mbs.glob_libraries("SdL3") 
-
---[[
-
-The third option is to use lflags and cflags manually. 
-
-May work for some libraries.
-
---]]
-
-mbs.lflags(project,"-lSDL3")
-mbs.cflags(project,"-I/usr/include/freetype2")
-
-
--- ^^^^^
--- Notice that unlike the lflags and clflags the glob_packages and glob_libraries are not case sensitive.
-
+local packages_enforce_version = mbs.glob_packages(
+	"sDl2 > 1.0" ,
+	"sdl2 < 1.0" ,
+	"sdl2 <= 1.0" ,
+	"sdl2 => 1.0",
+	"sdl2 == 1.0"
+   )
 
 --[[ 
 
-glob_packages and glob_libraries also have _static counterparts
+Second option is to manually describe the packages with glob_packages_manual.
+It takes *Package objects as parameters and outputs them as similar table of objects as glob_packages would.
+
+The flags are case sensitive.
 
 --]]
 
-local packages_static = mbs.glob_packages_static("liBz")
-local packages_static = mbs.glob_libraries_static("Libz")
+ local manual_packages = mbs.glob_packages_manual(
+    { name = "SDL3", libraries = "-lSDL3", headers = "-I/opt/sdl3/include", version = "3.4.12" },
+    { name = "foo", libraries = "-lfoo", static = true }
+  )
 
 
 mbs.packages(project,packages,packages_static)

@@ -2,8 +2,7 @@
 # 1.4
 
 <b>new functions:</b>
-* glob_libraries_static
-* glob_libraries
+* glob_packages_manual
 
 <b>New cli-commands:</b>
 * run
